@@ -1,11 +1,11 @@
 from app import db
 
 # Association tables
-song_artist = db.Table(
+"""song_artist = db.Table(
     'song_artist',
     db.Column('song_id', db.Integer, db.ForeignKey('Songs.id'), primary_key=True),
     db.Column('artist_id', db.Integer, db.ForeignKey('artists.id'), primary_key=True)
-)
+)"""
 
 
 class Song(db.Model):
@@ -38,7 +38,7 @@ class Song(db.Model):
     artists = db.relationship('Artist', secondary=song_artist, back_populates='songs')
     """genres = db.relationship('Genre', secondary=song_genre, back_populates='songs')"""
 
-class Artist(db.Model):
+"""class Artist(db.Model):
     __tablename__ = "artists"
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     name = db.Column(db.String, nullable=False)
@@ -47,7 +47,7 @@ class Artist(db.Model):
     genre = db.Column(db.List, nullable=True)
     #Many to many
 
-    songs = db.relationship('Song', secondary=song_artist, back_populates='artists')
+    songs = db.relationship('Song', secondary=song_artist, back_populates='artists')"""
 
 
 class Recommendation(db.Model):
@@ -68,10 +68,10 @@ class Recommendation(db.Model):
 Utility functions :)
 """
 
-
-def create_song(spotify_id, name, artist, audio_features=None):
+def create_song(spotify_id, name, artists, audio_features=None):
     song = Song(spotify_id=spotify_id, name=name, artist=[artist])
     if audio_features:
+        song.artists = artists
         song.tempo = audio_features.get('tempo')
         song.danceability = audio_features.get('danceability')
         song.energy = audio_features.get('energy')
@@ -92,7 +92,7 @@ def create_song(spotify_id, name, artist, audio_features=None):
         gemini_data = []
         for song in songs:
             song_data = {
-                "author": [artist.name for artist in song.artists],
+                "author": song.artists,
                 "spotify_id": song.spotify_id,
                 "name": song.name,
                 "tempo": song.tempo,
