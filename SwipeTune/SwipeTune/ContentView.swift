@@ -2,10 +2,9 @@
 //  ContentView.swift
 //  SwipeTune
 //
-//  Created by Anatoli Monsalve on 9/19/25.
+//  Created by Anatoli Monsalve and Ethan Chen on 9/19/25.
 //
 import SwiftUI
-
 struct ContentView: View {
     @AppStorage("didOnboard") private var didOnboard = false
     var body: some View {
@@ -16,5 +15,4 @@ struct ContentView: View {
         }
     }
 }
-
 #Preview { ContentView() }
