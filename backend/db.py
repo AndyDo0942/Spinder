@@ -122,7 +122,6 @@ def store_gemini_recommendations(recommended_songs):
         recommendation = Recommendation(
             name=rec_data['name'],
             artist=rec_data.get('artist'),
-            image_url=rec_data.get('image_url'),
         )
 
         db.session.add(recommendation)
@@ -133,7 +132,12 @@ def store_gemini_recommendations(recommended_songs):
 
 def get_recommendations():
     """Get all recommendations for user display"""
-    return Recommendation.query.all()
+    recommended_data = []
+    for rec in Recommendation.query.all():
+        recommended_data.append({
+            "name": rec.name,
+            "artist": rec.artist,
+        })
 
 
 def get_song_count():
