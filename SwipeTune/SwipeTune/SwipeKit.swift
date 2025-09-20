@@ -186,22 +186,10 @@ struct SongSwipeDeck: View {
                 .padding()
                 .background(RoundedRectangle(cornerRadius: 16).fill(Color(.systemBackground)))
                 .shadow(radius: 10)
+            
             }
         }
-        .safeAreaInset(edge: .bottom) {
-            HStack(spacing: 24) {
-                Button(action: { manualSwipe(like: false) }) {
-                    ControlButton(icon: "xmark")
-                }
-                Button(action: { player.toggle() }) {
-                    ControlButton(icon: player.isPlaying ? "pause.fill" : "play.fill")
-                }
-                Button(action: { manualSwipe(like: true) }) {
-                    ControlButton(icon: "heart.fill")
-                }
-            }
-            .padding(.bottom, 24)
-        }
+        .padding(.bottom,50)
         .onChange(of: store.deck.first?.previewURL) { _, url in
             // Auto-play preview for the top card if available
             player.play(url: url)
@@ -237,22 +225,64 @@ enum DemoData {
     ]
 }
 
+// MARK: - Palette (reusable colors & gradients)
+private struct Palette {
+    static let grad = LinearGradient(
+        colors: [
+            Color(hue: 0.76, saturation: 0.72, brightness: 0.88), // lavender
+            Color(hue: 0.86, saturation: 0.60, brightness: 0.92), // pinkish violet
+            Color(hue: 0.64, saturation: 0.55, brightness: 0.90)  // periwinkle
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+    static let subtle = LinearGradient(
+        colors: [
+            Color.purple.opacity(0.28),
+            Color.pink.opacity(0.18)
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+}
+
+// MARK: - SongSwipeHome
 struct SongSwipeHome: View {
     @StateObject private var store = SwipeStore(deck: DemoData.songs)
+    
+    // State for animations
+    @State private var logoOpacity: Double = 0
+    @State private var logoAtTop: Bool = true
+    
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                // Custom Gradient Title
+                Text("Spinder")
+                    .font(.system(size: 36, weight: .heavy, design: .rounded))
+                    .foregroundStyle(Palette.grad) // ✅ Gradient applied
+                    .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 4)
+                    .opacity(logoOpacity)
+                    .padding(.top, logoAtTop ? 10 : 64)
+                    .onAppear {
+                        withAnimation(.easeOut(duration: 0.7)) { logoOpacity = 1 }
+                    }
+                
+                // Swipe deck
                 SongSwipeDeck(store: store)
+                    .frame(maxHeight: .infinity)
             }
-            .navigationTitle("TuneSwipe")
             .toolbar {
                 NavigationLink {
                     LikedListView(liked: store.liked)
-                } label: { Image(systemName: "heart") }
+                } label: {
+                    Image(systemName: "heart")
+                }
             }
         }
     }
 }
+
 
 struct LikedListView: View {
     let liked: [Song]
