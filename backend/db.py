@@ -15,7 +15,6 @@ class Song(db.Model):
     spotify_id = db.Column(db.String(100), unique=True, nullable=False)
     name = db.Column(db.String(200), nullable=False)
     artists = db.Column(db.JSON, nullable=False) #list of strings
-    
     # Audio features for Gemini analysis
     tempo = db.Column(db.Float, nullable=True)
     danceability = db.Column(db.Float, nullable=True)
