@@ -1,4 +1,4 @@
-from config import db
+from app import db
 
 # Association tables
 song_artist = db.Table(

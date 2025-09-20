@@ -1,8 +1,7 @@
 import base64
-
+from flask_sqlalchemy import SQLAlchemy
 import requests
 from flask import request, jsonify, Flask
-from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 
 app = Flask(__name__)
@@ -33,6 +32,28 @@ response = requests.post(authOptions["url"], headers=authOptions["headers"], dat
 access_token = response.json()["access_token"]
 
 
+def getSpotifyIDs(SpotifyJSON):
+    SpotifyIDs = []
+    for track in SpotifyJSON["tracks"]["items"]:
+        SpotifyIDs.append(track["track"]["id"])
+    return SpotifyIDs
+
+
+def getReccoSongProperties(SpotifyIDs):
+    recHeaders = {
+        'Accept': 'application/json'}
+
+    reccoBeatsRes = requests.get(f"https://api.reccobeats.com/v1/track?ids={",".join(SpotifyIDs)}", headers=recHeaders,
+                                 data={})
+    reccoSongDetails = []
+    for track in reccoBeatsRes.json()["content"]:
+        reccoSongDetails.append(
+            requests.get(f"https://api.reccobeats.com/v1/track/{track["id"]}/audio-features", headers=recHeaders,
+                         data={}).json())
+
+    return reccoSongDetails
+
+
 @app.route("/linkSend", methods=['POST'])
 def linkSend():
     data = request.get_json()
@@ -49,16 +70,7 @@ def linkSend():
     response = requests.get(url, headers=headers)
     response.raise_for_status()
 
-    playlist_data = response.json()
+    reccoSongDetails = getReccoSongProperties(response.json())
 
-    # Print some info
-    print("Playlist name:", playlist_data["name"])
-    print("Owner:", playlist_data["owner"]["display_name"])
-    print("Total tracks:", playlist_data["tracks"]["total"])
-
-    # List first few tracks
-    for item in playlist_data["tracks"]["items"][:5]:
-        track = item["track"]
-        print(track["name"], "-", ", ".join(artist["name"] for artist in track["artists"]))
-
+    print(reccoSongDetails)
     return response.json(), response.status_code
