@@ -31,6 +31,7 @@ response = requests.post(authOptions["url"], headers=authOptions["headers"], dat
 
 access_token = response.json()["access_token"]
 
+from db import create_song
 
 def getSpotifyIDs(SpotifyJSON):
     SpotifyIDs = []
@@ -43,15 +44,13 @@ def getReccoSongProperties(SpotifyIDs):
     recHeaders = {
         'Accept': 'application/json'}
 
-    reccoBeatsRes = requests.get(f"https://api.reccobeats.com/v1/track?ids={",".join(SpotifyIDs)}", headers=recHeaders,
-                                 data={})
+    reccoBeatsRes = requests.get(f"https://api.reccobeats.com/v1/track?ids={",".join(SpotifyIDs)}", headers=recHeaders)
     reccoSongDetails = []
     for track in reccoBeatsRes.json()["content"]:
         reccoSongDetails.append(
-            requests.get(f"https://api.reccobeats.com/v1/track/{track["id"]}/audio-features", headers=recHeaders,
-                         data={}).json())
-
+            requests.get(f"https://api.reccobeats.com/v1/track/{track["id"]}/audio-features", headers=recHeaders).json().pop("id").pop("href"))
     return reccoSongDetails
+
 
 
 @app.route("/linkSend", methods=['POST'])
@@ -70,7 +69,12 @@ def linkSend():
     response = requests.get(url, headers=headers)
     response.raise_for_status()
 
-    reccoSongDetails = getReccoSongProperties(response.json())
+    reccoSongDetails = getReccoSongProperties(getSpotifyIDs(response.json()))
 
-    print(reccoSongDetails)
+
+    for i in range(len(response.json["tracks"]["items"])):
+        track = response.json["tracks"]["items"][i]["track"]
+        create_song(getSpotifyIDs(response.json()), track["name"], track["artists"], reccoSongDetails[i])
+
+
     return response.json(), response.status_code
