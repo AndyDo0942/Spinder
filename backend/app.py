@@ -36,6 +36,11 @@ from db import create_song, create_gemini_json, db
 db.init_app(app)
 with app.app_context():
     db.create_all()
+
+with app.app_context():
+    from db import reset_schema
+    reset_schema()
+
 def getSpotifyIDs(SpotifyJSON):
     SpotifyIDs = []
     for track in SpotifyJSON["tracks"]["items"]:

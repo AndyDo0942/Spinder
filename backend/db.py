@@ -7,7 +7,18 @@ db = SQLAlchemy()
     db.Column('song_id', db.Integer, db.ForeignKey('songs.id'), primary_key=True),
     db.Column('artist_id', db.Integer, db.ForeignKey('artists.id'), primary_key=True)
 )"""
-#yoo
+from flask import current_app
+from sqlalchemy import text
+
+def reset_schema():
+    """
+    Drops all tables and recreates them according to the current models.
+    Use only in dev—this wipes ALL data.
+    """
+    with current_app.app_context():
+        db.drop_all()
+        db.create_all()
+
 class Song(db.Model):
     __tablename__ = "songs"
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
@@ -28,15 +39,7 @@ class Song(db.Model):
     mode = db.Column(db.Integer, nullable=True)
     time_signature = db.Column(db.Integer, nullable=True)
     
-    
-    # Many-to-many relationship with artists
 
-"""class Artist(db.Model):
-    __tablename__ = "artists"
-    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    name = db.Column(db.String(200), nullable=False)
-    song = db.relationship('Song', back_populates='artists')
-    song_id = db.Column(db.Integer, db.ForeignKey('songs.id'), nullable=False)"""
 
 class Recommendation(db.Model):
     __tablename__ = "recommendations"
@@ -46,14 +49,6 @@ class Recommendation(db.Model):
     image_url = db.Column(db.String(500), nullable=True)
 
 # Utility functions
-"""def get_or_create_artist(spotify_id, name):
-    Get existing artist or create new one
-    artist = Artist.query.filter_by(spotify_id=spotify_id).first()
-    if not artist:
-        artist = Artist(spotify_id=spotify_id, name=name)
-        db.session.add(artist)
-        db.session.commit()
-    return artist"""
 
 def create_song(spotify_id, name, artists, audio_features):
     # Create the song
