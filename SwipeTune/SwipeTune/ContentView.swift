@@ -11,7 +11,7 @@ struct ContentView: View {
         if didOnboard {
             SongSwipeHome()    // or RootAppView() if you want the playlist sheet path
         } else {
-            RootAppView()      // includes the “Import Playlist Link” option
+            DreamOnboarding()
         }
     }
 }
