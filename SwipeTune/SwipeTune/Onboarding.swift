@@ -20,6 +20,24 @@ private struct Palette {
         endPoint: .bottomTrailing
     )
 }
+// Gradient text helper
+private extension View {
+    func gradientText() -> some View { self.foregroundStyle(Palette.grad) }
+}
+
+// Glassy gradient-stroke button
+private struct GlassGradientButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .padding(.horizontal, 26).padding(.vertical, 14)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(Palette.grad, lineWidth: 2)
+            )
+            .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
+    }
+}
 
 private struct DreamyBackdrop: View {
     var body: some View {
