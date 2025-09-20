@@ -38,7 +38,6 @@ class Artist(db.Model):
     __tablename__ = "artists"
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     name = db.Column(db.String(200), nullable=False)
-    # Many-to-many relationship with songs
     song = db.relationship('Song', back_populates='artists')
     song_id = db.Column(db.Integer, db.ForeignKey('songs.id'), nullable=False)
 
