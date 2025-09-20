@@ -247,6 +247,56 @@ Return ONLY the JSON array (30 items)."""
     return recommendationIDs
 
 
+def getSpotifyTrackInfo(SpotifyIDs):
+    """
+    Given a list of Spotify track IDs, fetches the track metadata
+    (artist names and song names).
+
+    Returns a dict with parallel lists:
+    {
+      "artists": [ [list of artist names], ... ],
+      "names":   [ song name, ... ]
+    }
+    Order is preserved and matches the input list.
+    If a track ID is invalid or missing, None is placed in its slot.
+    """
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    # Pre-fill results with None to preserve index alignment
+    artists = [None] * len(SpotifyIDs)
+    names = [None] * len(SpotifyIDs)
+
+    # Spotify's track endpoint allows up to 50 IDs at once
+    def chunks(lst, n):
+        for i in range(0, len(lst), n):
+            yield lst[i:i+n], i  # return batch and starting index
+
+    for batch, start_idx in chunks(SpotifyIDs, 50):
+        ids_param = ",".join(batch)
+        url = f"https://api.spotify.com/v1/tracks?ids={ids_param}"
+
+        try:
+            resp = requests.get(url, headers=headers, timeout=15)
+            resp.raise_for_status()
+            items = resp.json().get("tracks", [])
+        except requests.RequestException:
+            # Leave this batch as None if it fails
+            continue
+
+        # Fill results for each ID in the batch
+        for offset, track in enumerate(items):
+            idx = start_idx + offset
+            if track is None:
+                continue
+            # Extract artist names and song title
+            artist_names = [a["name"] for a in track["artists"]]
+            song_name = track["name"]
+            artists[idx] = artist_names
+            names[idx] = song_name
+
+    return {"artists": artists, "names": names}
+
+
 @app.route("/link/<playlist_id>", methods=['GET'])
 def playlistRecs(playlist_id: str):
     # 54ZA9LXFvvFujmOVWXpHga
@@ -266,3 +316,10 @@ def playlistRecs(playlist_id: str):
         names.append(track["name"])
 
     return getRecommendations(getSpotifyIDs(response.json()), names, artists), 200
+
+@app.route("/songids" , methods=['POST'])
+def moreRecs():
+    spotifyIDs = request.get_json()
+    info = getSpotifyTrackInfo(spotifyIDs)
+    return getRecommendations(spotifyIDs, info["names"], info["artists"]), 200
+
