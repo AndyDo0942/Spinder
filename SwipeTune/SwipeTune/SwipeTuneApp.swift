@@ -2,7 +2,7 @@
 //  SwipeTuneApp.swift
 //  SwipeTune
 //
-//  Created by Anatoli Monsalve on 9/19/25.
+//  Created by Anatoli Monsalve and Ethan Chen on 9/19/25.
 //
 
 import SwiftUI

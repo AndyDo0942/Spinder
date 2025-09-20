@@ -10,6 +10,7 @@ db = SQLAlchemy()
 from flask import current_app
 from sqlalchemy import text
 
+
 def reset_schema():
     """
     Drops all tables and recreates them according to the current models.
@@ -19,12 +20,13 @@ def reset_schema():
         db.drop_all()
         db.create_all()
 
+
 class Song(db.Model):
     __tablename__ = "songs"
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     spotify_id = db.Column(db.String(100), nullable=False)
     name = db.Column(db.String(200), nullable=False)
-    artists = db.Column(db.JSON, nullable=False) #list of strings
+    artists = db.Column(db.JSON, nullable=False)  # list of strings
     # Audio features for Gemini analysis
     tempo = db.Column(db.Float, nullable=True)
     danceability = db.Column(db.Float, nullable=True)
@@ -38,7 +40,6 @@ class Song(db.Model):
     key = db.Column(db.Integer, nullable=True)
     mode = db.Column(db.Integer, nullable=True)
     time_signature = db.Column(db.Integer, nullable=True)
-    
 
 class Recommendation(db.Model):
     __tablename__ = "recommendations"
@@ -46,33 +47,40 @@ class Recommendation(db.Model):
     name = db.Column(db.String(200), nullable=False)
     artist = db.column(db.JSON, nullable=False)
 
+
 # Utility functions
 
 def create_song(spotify_id, name, artists, audio_features):
     # Create the song
-    song = Song(
-        artists = artists,
-        spotify_id=spotify_id,
-        name=name,
-        # Audio features
-        tempo=audio_features.get('tempo'),
-        danceability=audio_features.get('danceability'),
-        energy=audio_features.get('energy'),
-        valence=audio_features.get('valence'),
-        acousticness=audio_features.get('acousticness'),
-        instrumentalness=audio_features.get('instrumentalness'),
-        liveness=audio_features.get('liveness'),
-        loudness=audio_features.get('loudness'),
-        speechiness=audio_features.get('speechiness'),
-        key=audio_features.get('key'),
-        mode=audio_features.get('mode'),
-        time_signature=audio_features.get('time_signature')
-    )
-    
-    
+    if audio_features is not None:
+        song = Song(
+            artists=artists,
+            spotify_id=spotify_id,
+            name=name,
+            # Audio features
+
+            tempo=audio_features.get('tempo'),
+            danceability=audio_features.get('danceability'),
+            energy=audio_features.get('energy'),
+            valence=audio_features.get('valence'),
+            acousticness=audio_features.get('acousticness'),
+            instrumentalness=audio_features.get('instrumentalness'),
+            liveness=audio_features.get('liveness'),
+            loudness=audio_features.get('loudness'),
+            speechiness=audio_features.get('speechiness'),
+            key=audio_features.get('key'),
+            mode=audio_features.get('mode'),
+            time_signature=audio_features.get('time_signature')
+        )
+    else:
+        song = Song(artists=artists,
+                    spotify_id=spotify_id,
+                    name=name)
+
     db.session.add(song)
     db.session.commit()
     return song
+
 
 def create_gemini_json():
     """
@@ -83,12 +91,11 @@ def create_gemini_json():
     """
     songs = Song.query.all()
     gemini_data = []
-    
+
     for song in songs:
-        
         song_data = {
             "song_name": song.name,
-            "author_name": song.artists, # List of artist names
+            "author_name": song.artists,  # List of artist names
             "spotify_song_id": song.spotify_id,
             "audio_features": {
                 "tempo": song.tempo,
@@ -106,28 +113,33 @@ def create_gemini_json():
             }
         }
         gemini_data.append(song_data)
-    
+
     return gemini_data
+
 
 def store_gemini_recommendations(recommended_songs):
     for rec_data in recommended_songs:
         recommendation = Recommendation(
             name=rec_data['name'],
-            artist = rec_data.get('artist'),
+            artist=rec_data.get('artist'),
+            image_url=rec_data.get('image_url'),
         )
-        
+
         db.session.add(recommendation)
-    
+
     db.session.commit()
     return len(recommended_songs)
+
 
 def get_recommendations():
     """Get all recommendations for user display"""
     return Recommendation.query.all()
 
+
 def get_song_count():
     """Get total number of songs in database"""
     return Song.query.count()
+
 
 def clear_all_data():
     """Clear all data from all tables (useful for testing)"""
@@ -135,4 +147,3 @@ def clear_all_data():
     Song.query.delete()
     db.session.commit()
     return "All data cleared"
-

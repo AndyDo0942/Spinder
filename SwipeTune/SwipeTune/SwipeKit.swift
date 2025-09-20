@@ -2,6 +2,48 @@ import SwiftUI
 import AVFoundation
 import Combine
 
+// MARK: - Dreamy Aesthetic (palette + helpers)
+private struct Palette {
+    static let grad = LinearGradient(
+        colors: [
+            Color(hue: 0.76, saturation: 0.72, brightness: 0.88), // lavender
+            Color(hue: 0.86, saturation: 0.60, brightness: 0.92), // pinkish violet
+            Color(hue: 0.64, saturation: 0.55, brightness: 0.90)  // periwinkle
+        ],
+        startPoint: .topLeading, endPoint: .bottomTrailing
+    )
+    static let aura1 = LinearGradient(
+        colors: [Color.purple.opacity(0.30), Color.pink.opacity(0.18)],
+        startPoint: .topLeading, endPoint: .bottomTrailing
+    )
+    static let aura2 = LinearGradient(
+        colors: [Color.blue.opacity(0.20), Color.purple.opacity(0.24)],
+        startPoint: .bottomLeading, endPoint: .topTrailing
+    )
+}
+
+// Gradient text helper
+private extension View {
+    func gradientText() -> some View { self.foregroundStyle(Palette.grad) }
+}
+
+// Glassy gradient-stroke button
+private struct GlassGradientButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .padding(.horizontal, 26).padding(.vertical, 14)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(Palette.grad, lineWidth: 2)
+            )
+            .shadow(color: .purple.opacity(configuration.isPressed ? 0.12 : 0.18),
+                    radius: configuration.isPressed ? 8 : 16, x: 0, y: 8)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
+    }
+}
+
+
 // MARK: - Model
 struct Song: Identifiable, Equatable {
     let id = UUID()
@@ -147,14 +189,16 @@ struct LabelBadge: View {
     var body: some View {
         Text(text)
             .font(.headline.bold())
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 12).padding(.vertical, 6)
             .background(.ultraThinMaterial)
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(color, lineWidth: 2))
-            .foregroundColor(color)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Palette.grad, lineWidth: 2)
+            )
+            .foregroundStyle(color) // keep the green/red text color for LIKE/NOPE
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .rotationEffect(.degrees(-10))
-            .shadow(radius: 6)
+            .shadow(color: .purple.opacity(0.18), radius: 6)
     }
 }
 
@@ -186,22 +230,10 @@ struct SongSwipeDeck: View {
                 .padding()
                 .background(RoundedRectangle(cornerRadius: 16).fill(Color(.systemBackground)))
                 .shadow(radius: 10)
+            
             }
         }
-        .safeAreaInset(edge: .bottom) {
-            HStack(spacing: 24) {
-                Button(action: { manualSwipe(like: false) }) {
-                    ControlButton(icon: "xmark")
-                }
-                Button(action: { player.toggle() }) {
-                    ControlButton(icon: player.isPlaying ? "pause.fill" : "play.fill")
-                }
-                Button(action: { manualSwipe(like: true) }) {
-                    ControlButton(icon: "heart.fill")
-                }
-            }
-            .padding(.bottom, 24)
-        }
+        .padding(.bottom,50)
         .onChange(of: store.deck.first?.previewURL) { _, url in
             // Auto-play preview for the top card if available
             player.play(url: url)
@@ -220,11 +252,12 @@ struct ControlButton: View {
     var body: some View {
         Circle()
             .fill(.ultraThinMaterial)
-            .overlay(Image(systemName: icon).font(.title3))
+            .overlay(Circle().stroke(Palette.grad, lineWidth: 2))
+            .overlay(Image(systemName: icon).font(.title3).foregroundStyle(.primary))
             .frame(width: 60, height: 60)
-            .shadow(radius: 4)
+            .shadow(color: .purple.opacity(0.18), radius: 16, x: 0, y: 8)
     }
-}
+    }
 
 // MARK: - Demo + Previews
 enum DemoData {
@@ -237,22 +270,43 @@ enum DemoData {
     ]
 }
 
+// MARK: - SongSwipeHome
 struct SongSwipeHome: View {
     @StateObject private var store = SwipeStore(deck: DemoData.songs)
+    
+    // State for animations
+    @State private var logoOpacity: Double = 0
+    @State private var logoAtTop: Bool = true
+    
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                // Custom Gradient Title
+                Text("Spinder")
+                    .font(.system(size: 36, weight: .heavy, design: .rounded))
+                    .foregroundStyle(Palette.grad) // ✅ Gradient applied
+                    .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 4)
+                    .opacity(logoOpacity)
+                    .padding(.top, logoAtTop ? 10 : 64)
+                    .onAppear {
+                        withAnimation(.easeOut(duration: 0.7)) { logoOpacity = 1 }
+                    }
+                
+                // Swipe deck
                 SongSwipeDeck(store: store)
+                    .frame(maxHeight: .infinity)
             }
-            .navigationTitle("TuneSwipe")
             .toolbar {
                 NavigationLink {
                     LikedListView(liked: store.liked)
-                } label: { Image(systemName: "heart") }
+                } label: {
+                    Image(systemName: "heart")
+                }
             }
         }
     }
 }
+
 
 struct LikedListView: View {
     let liked: [Song]
@@ -376,42 +430,73 @@ struct PlaylistLinkOnboarding: View {
     let onImported: ([Song]) -> Void
 
     var body: some View {
-        VStack(spacing: 16) {
-            Text("Bring Your Playlist")
-                .font(.title.bold())
-            Text("Paste a Spotify playlist link to seed recommendations.")
-                .font(.body)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
+        ZStack {
+            // Transparent background so the sheet blends with onboarding
+            Color.clear.ignoresSafeArea()
 
-            TextField("https://open.spotify.com/playlist/...", text: $input)
-                .textInputAutocapitalization(.never)
-                .keyboardType(.URL)
-                .textContentType(.URL)
-                .autocorrectionDisabled()
-                .padding()
-                .background(RoundedRectangle(cornerRadius: 12).fill(Color(.secondarySystemBackground)))
+            VStack(spacing: 28) {
+                Text("Bring Your Playlist")
+                    .font(.title.bold())
+                    .foregroundStyle(Palette.grad)   // ← replaces .gradientText()
 
-            if let error { Text(error).foregroundStyle(.red).font(.footnote) }
+                Text("Paste a Spotify playlist link to seed recommendations.")
+                    .font(.body)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.secondary)
 
-            Button(action: importLink) {
-                HStack {
-                    if isLoading { ProgressView() }
-                    Text(isLoading ? "Importing…" : "Use This Playlist").bold()
+                // Input field
+                TextField("https://open.spotify.com/playlist/...", text: $input)
+                    .textInputAutocapitalization(.never)
+                    .keyboardType(.URL)
+                    .textContentType(.URL)
+                    .autocorrectionDisabled()
+                    .padding(.horizontal, 16).padding(.vertical, 14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(.ultraThinMaterial)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .stroke(
+                                        LinearGradient(
+                                            colors: [Color.purple.opacity(0.5), Color.indigo.opacity(0.5)],
+                                            startPoint: .topLeading, endPoint: .bottomTrailing
+                                        ),
+                                        lineWidth: 1
+                                    )
+                            )
+                    )
+                    .foregroundColor(.gray) // link font color gray
+
+                if let error {
+                    Text(error).font(.footnote).foregroundStyle(.red)
                 }
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(RoundedRectangle(cornerRadius: 12).fill(Color.accentColor))
-                .foregroundColor(.white)
-            }
-            .disabled(isLoading || URL(string: input) == nil)
 
-            Button("Skip for now") { dismiss() }
-                .foregroundStyle(.secondary)
-            Spacer()
+                // Primary button
+                Button {
+                    importLink()
+                } label: {
+                    HStack(spacing: 8) {
+                        if isLoading { ProgressView() }
+                        Text(isLoading ? "Importing…" : "Use This Playlist").bold()
+                    }
+                    .foregroundStyle(.black)
+                }
+                .buttonStyle(GlassGradientButtonStyle())
+                .disabled(isLoading || URL(string: input) == nil)
+
+                Button("Skip for now") { dismiss() }
+                    .foregroundStyle(.secondary)
+            }
+            .padding(20)
+            .background(
+                RoundedRectangle(cornerRadius: 24)
+                    .fill(.ultraThinMaterial)
+            )
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
         }
-        .padding()
     }
+
 
     private func importLink() {
         error = nil

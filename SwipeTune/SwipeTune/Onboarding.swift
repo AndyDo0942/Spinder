@@ -20,6 +20,24 @@ private struct Palette {
         endPoint: .bottomTrailing
     )
 }
+// Gradient text helper
+private extension View {
+    func gradientText() -> some View { self.foregroundStyle(Palette.grad) }
+}
+
+// Glassy gradient-stroke button
+private struct GlassGradientButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .padding(.horizontal, 26).padding(.vertical, 14)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(Palette.grad, lineWidth: 2)
+            )
+            .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
+    }
+}
 
 private struct DreamyBackdrop: View {
     var body: some View {
@@ -63,7 +81,23 @@ private struct PageDots: View {
         .accessibilityLabel("Page \(index + 1) of \(count)")
     }
 }
-
+// MARK: - Hero icon (gradient + soft badge)
+private struct HeroIcon: View {
+    let systemName: String
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(.ultraThinMaterial)
+                .frame(width: 72, height: 72)
+            Image(systemName: systemName)
+                .font(.system(size: 30, weight: .semibold))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(Palette.grad)
+        }
+        .shadow(color: .black.opacity(0.06), radius: 10, y: 6)
+        .padding(.bottom, 6)
+    }
+}
 // MARK: - 6-screen onboarding with logo motion + gradient type
 struct DreamOnboarding: View {
     @AppStorage("didOnboard") private var didOnboard = false
@@ -94,9 +128,10 @@ struct DreamOnboarding: View {
                     }
 
                 TabView(selection: $page) {
-                    // 1) Intro (logo centered, gentle line)
+                    // 1) Intro
                     VStack(spacing: 16) {
                         Spacer(minLength: 8)
+                        HeroIcon(systemName: "sparkles") // 🌟 intro
                         Text("Welcome to the sound of serendipity.")
                             .multilineTextAlignment(.center)
                             .foregroundStyle(.secondary)
@@ -107,6 +142,7 @@ struct DreamOnboarding: View {
 
                     // 2) Problem: stale playlists
                     VStack(spacing: 16) {
+                        HeroIcon(systemName: "exclamationmark.circle") // ❗ stale playlists
                         Text("Stale playlists?")
                             .font(.title.bold())
                             .foregroundStyle(.primary)
@@ -117,8 +153,9 @@ struct DreamOnboarding: View {
                     }
                     .tag(1)
 
-                    // 3) Solution + slogan (catchy)
+                    // 3) Solution + slogan
                     VStack(spacing: 14) {
+                        HeroIcon(systemName: "wand.and.stars") // ✨ solution
                         Text("Meet your music matchmaker.")
                             .font(.title.bold())
                             .foregroundStyle(.primary)
@@ -132,8 +169,9 @@ struct DreamOnboarding: View {
                     }
                     .tag(2)
 
-                    // 4) How it works (high-level)
+                    // 4) How it works
                     VStack(spacing: 16) {
+                        HeroIcon(systemName: "questionmark.circle") // ❓ how it works
                         Text("How it works")
                             .font(.title.bold())
                             .foregroundStyle(.primary)
@@ -144,12 +182,12 @@ struct DreamOnboarding: View {
                     }
                     .tag(3)
 
-                    // 5) Overview steps
+                    // 5) Steps
                     VStack(alignment: .leading, spacing: 12) {
                         Text("The Flow")
                             .font(.title.bold())
                             .foregroundStyle(.primary)
-                            .padding(.top, 150)
+                            .padding(.top, 50)
                         StepRow(number: 1, title: "Upload your Spotify playlist")
                         StepRow(number: 2, title: "Swipe songs — right to like, left to skip")
                         StepRow(number: 3, title: "AI builds your Taste Profile")
@@ -159,9 +197,10 @@ struct DreamOnboarding: View {
                     .padding(.horizontal, 28)
                     .tag(4)
 
-                    // 6) CTA screen → open import sheet
+                    // 6) CTA
                     VStack(spacing: 16) {
                         Text("Ready to start?")
+                            .padding(.top, 20)
                             .font(.title.bold())
                             .foregroundStyle(.primary)
 
@@ -216,12 +255,13 @@ struct DreamOnboarding: View {
             .padding(.horizontal, 18)
         }
         .sheet(isPresented: $showPlaylistSheet) {
-            // Reuse your existing import sheet from SwipeKit.swift
             PlaylistLinkOnboarding { importedSongs in
-                // After successful import → mark onboarding done (ContentView will route to deck)
                 didOnboard = true
             }
             .presentationDetents([.medium, .large])
+            .presentationBackground(.clear)       // keep blending with the page bg
+            .presentationCornerRadius(28)         // ← curved sheet
+            .presentationDragIndicator(.hidden)   // ← hide gray handle for a cleaner look
         }
     }
 }
