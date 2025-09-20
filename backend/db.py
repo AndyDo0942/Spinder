@@ -1,19 +1,19 @@
-from app import db
+from flask_sqlalchemy import SQLAlchemy
+from datetime import datetime
 
-# Association tables
-"""song_artist = db.Table(
+db = SQLAlchemy()
+# Association table for many-to-many relationship between songs and artists
+song_artist = db.Table(
     'song_artist',
-    db.Column('song_id', db.Integer, db.ForeignKey('Songs.id'), primary_key=True),
+    db.Column('song_id', db.Integer, db.ForeignKey('songs.id'), primary_key=True),
     db.Column('artist_id', db.Integer, db.ForeignKey('artists.id'), primary_key=True)
-)"""
-
+)
 
 class Song(db.Model):
-    __tablename__ = "Songs"
+    __tablename__ = "songs"
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     spotify_id = db.Column(db.String(100), unique=True, nullable=False)
     name = db.Column(db.String(200), nullable=False)
-    artists = db.Column(db.list, nullable=False)
     
     # Audio features for Gemini analysis
     tempo = db.Column(db.Float, nullable=True)
@@ -29,72 +29,92 @@ class Song(db.Model):
     mode = db.Column(db.Integer, nullable=True)
     time_signature = db.Column(db.Integer, nullable=True)
     
-    # One-to-many relationship with playlist
-    """playlist_id = db.Column(db.Integer, db.ForeignKey('playlists.id'), nullable=False)
-    playlist = db.relationship('Playlist', back_populates='songs')"""
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
-    # Many-to-many relationships
-
+    # Many-to-many relationship with artists
     artists = db.relationship('Artist', secondary=song_artist, back_populates='songs')
-    """genres = db.relationship('Genre', secondary=song_genre, back_populates='songs')"""
 
-"""class Artist(db.Model):
+class Artist(db.Model):
     __tablename__ = "artists"
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    name = db.Column(db.String, nullable=False)
     spotify_id = db.Column(db.String(100), unique=True, nullable=False)
     name = db.Column(db.String(200), nullable=False)
-    genre = db.Column(db.List, nullable=True)
-    #Many to many
-
-    songs = db.relationship('Song', secondary=song_artist, back_populates='artists')"""
-
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Many-to-many relationship with songs
+    songs = db.relationship('Song', secondary=song_artist, back_populates='artists')
 
 class Recommendation(db.Model):
     __tablename__ = "recommendations"
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    spotify_song_id = db.Column(db.String(100), nullable=False)  # Spotify ID of recommended song
-    name = db.Column(db.String(200), nullable=False)  # Song name
-    image_url = db.Column(db.String(500), nullable=True)  # Album artwork
-    external_url = db.Column(db.String(500), nullable=True)  # Spotify link
-    preview_url = db.Column(db.String(500), nullable=True)  # 30-second preview
+    spotify_song_id = db.Column(db.String(100), nullable=False)
+    name = db.Column(db.String(200), nullable=False)
+    image_url = db.Column(db.String(500), nullable=True)
+    external_url = db.Column(db.String(500), nullable=True)
+    preview_url = db.Column(db.String(500), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+# Utility functions
+def get_or_create_artist(spotify_id, name):
+    """Get existing artist or create new one"""
+    artist = Artist.query.filter_by(spotify_id=spotify_id).first()
+    if not artist:
+        artist = Artist(spotify_id=spotify_id, name=name)
+        db.session.add(artist)
+        db.session.commit()
+    return artist
+
+def create_song(spotify_id, name, artists, audio_features):
+    # Create the song
+    song = Song(
+        spotify_id=spotify_id,
+        name=name,
+        # Audio features
+        tempo=audio_features.get('tempo'),
+        danceability=audio_features.get('danceability'),
+        energy=audio_features.get('energy'),
+        valence=audio_features.get('valence'),
+        acousticness=audio_features.get('acousticness'),
+        instrumentalness=audio_features.get('instrumentalness'),
+        liveness=audio_features.get('liveness'),
+        loudness=audio_features.get('loudness'),
+        speechiness=audio_features.get('speechiness'),
+        key=audio_features.get('key'),
+        mode=audio_features.get('mode'),
+        time_signature=audio_features.get('time_signature')
+    )
     
-    # Link to playlist
-    playlist_id = db.Column(db.Integer, db.ForeignKey('playlists.id'), nullable=False)
-    playlist = db.relationship('Playlist', back_populates='recommendations')
-
-"""
-Utility functions :)
-"""
-
-def create_song(spotify_id, name, artists, audio_features=None):
-    song = Song(spotify_id=spotify_id, name=name, artist=[artist])
-    if audio_features:
-        song.artists = artists
-        song.tempo = audio_features.get('tempo')
-        song.danceability = audio_features.get('danceability')
-        song.energy = audio_features.get('energy')
-        song.valence = audio_features.get('valence')
-        song.acousticness = audio_features.get('acousticness')
-        song.instrumentalness = audio_features.get('instrumentalness')
-        song.liveness = audio_features.get('liveness')
-        song.loudness = audio_features.get('loudness')
-        song.speechiness = audio_features.get('speechiness')
-        song.key = audio_features.get('key')
-        song.mode = audio_features.get('mode')
-        song.time_signature = audio_features.get('time_signature')
+    # Handle artists
+    for artist_data in artists:
+        artist = get_or_create_artist(
+            spotify_id=artist_data['spotify_id'],
+            name=artist_data['name']
+        )
+        song.artists.append(artist)
+    
     db.session.add(song)
     db.session.commit()
+    return song
 
-    def create_gemini_json():
-        songs = Song.query.all()
-        gemini_data = []
-        for song in songs:
-            song_data = {
-                "author": song.artists,
-                "spotify_id": song.spotify_id,
-                "name": song.name,
+def create_gemini_json():
+    """
+    Create JSON object to send to Gemini with the exact format you need
+    
+    Returns:
+        list: List of dictionaries, each containing song data for Gemini
+    """
+    songs = Song.query.all()
+    gemini_data = []
+    
+    for song in songs:
+        # Get artist names as a list
+        artist_names = [artist.name for artist in song.artists]
+        
+        song_data = {
+            "song_name": song.name,
+            "author_name": artist_names,  # List of artist names
+            "spotify_song_id": song.spotify_id,
+            "audio_features": {
                 "tempo": song.tempo,
                 "danceability": song.danceability,
                 "energy": song.energy,
@@ -108,10 +128,42 @@ def create_song(spotify_id, name, artists, audio_features=None):
                 "mode": song.mode,
                 "time_signature": song.time_signature
             }
-            gemini_data.append(song_data)
-        return gemini_data
+        }
+        gemini_data.append(song_data)
+    
+    return gemini_data
 
+def store_gemini_recommendations(recommended_songs):
+    for rec_data in recommended_songs:
+        recommendation = Recommendation(
+            spotify_song_id=rec_data['spotify_song_id'],
+            name=rec_data['name'],
+            image_url=rec_data.get('image_url'),
+            external_url=rec_data.get('external_url'),
+            preview_url=rec_data.get('preview_url')
+        )
+        
+        db.session.add(recommendation)
+    
+    db.session.commit()
+    return len(recommended_songs)
 
-    return song
+def get_recommendations():
+    """Get all recommendations for user display"""
+    return Recommendation.query.all()
 
+def get_song_count():
+    """Get total number of songs in database"""
+    return Song.query.count()
 
+def get_artist_count():
+    """Get total number of artists in database"""
+    return Artist.query.count()
+
+def clear_all_data():
+    """Clear all data from all tables (useful for testing)"""
+    Recommendation.query.delete()
+    Song.query.delete()
+    Artist.query.delete()
+    db.session.commit()
+    return "All data cleared"
