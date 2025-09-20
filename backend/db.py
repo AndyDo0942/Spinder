@@ -149,7 +149,6 @@ def clear_all_data():
     """Clear all data from all tables (useful for testing)"""
     Recommendation.query.delete()
     Song.query.delete()
-    Artist.query.delete()
     db.session.commit()
     return "All data cleared"
 
