@@ -32,7 +32,7 @@ response = requests.post(authOptions["url"], headers=authOptions["headers"], dat
 
 access_token = response.json()["access_token"]
 
-from db import create_song, create_gemini_json, db
+from db import create_song, create_gemini_json, db, reset_schema
 db.init_app(app)
 with app.app_context():
     reset_schema()  # drop_all + create_all defined in db.py
