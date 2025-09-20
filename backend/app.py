@@ -15,8 +15,6 @@ CORS(app)
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///mydatabase.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-
-
 client_id = "ed7a342821fb4142af5a9feae25d3395"
 client_secret = "5f5df8bdf93d458f89ca1e17da6131af"
 credentials = f"{client_id}:{client_secret}"
@@ -37,6 +35,7 @@ response = requests.post(authOptions["url"], headers=authOptions["headers"], dat
 access_token = response.json()["access_token"]
 
 from db import create_song, create_gemini_json, db, reset_schema
+
 db.init_app(app)
 with app.app_context():
     reset_schema()  # drop_all + create_all defined in db.py
@@ -48,26 +47,77 @@ def getSpotifyIDs(SpotifyJSON):
         SpotifyIDs.append(track["track"]["id"])
     return SpotifyIDs
 
+from collections import defaultdict
 
 def getReccoSongProperties(SpotifyIDs):
     """
-    Gets the song properties from the Recco API
-
-    :param SpotifyIDs: list of Spotify IDs
-    :return: array of song properties
+    Fetch ReccoBeats audio-features for each Spotify ID.
+    Returns a list the SAME length & order as SpotifyIDs:
+        [ {'spotify_id': <id>, 'song_features': <dict|None>}, ... ]
+    If a track is missing in Recco or the features call fails, song_features is None.
     """
-    recHeaders = {
-        'Accept': 'application/json'}
+    recHeaders = {'Accept': 'application/json'}
 
-    reccoBeatsRes = requests.get(f"https://api.reccobeats.com/v1/track?ids={",".join(SpotifyIDs)}", headers=recHeaders)
-    reccoSongDetails = []
-    for track in reccoBeatsRes.json()["content"]:
-        rawReturn = requests.get(f"https://api.reccobeats.com/v1/track/{track["id"]}/audio-features",
-                         headers=recHeaders).json()
-        rawReturn.pop("id")
-        rawReturn.pop("href")
-        reccoSongDetails.append(rawReturn)
-    return reccoSongDetails
+    # Pre-fill results with None to preserve order; one entry per input ID
+    results = [
+        {"spotify_id": sid, "song_features": None}
+        for sid in SpotifyIDs
+    ]
+
+    # Support duplicate IDs by mapping id -> list of indices
+    id_to_indices = defaultdict(list)
+    for idx, sid in enumerate(SpotifyIDs):
+        id_to_indices[sid].append(idx)
+
+    # Helper: yield chunks of up to 40 IDs
+    def chunks(lst, n):
+        for i in range(0, len(lst), n):
+            yield lst[i:i+n]
+
+    # Process in batches of 40
+    for batch_ids in chunks(SpotifyIDs, 40):
+        # De-duplicate inside the batch so we don't over-query
+        unique_batch_ids = list(dict.fromkeys(batch_ids))
+        ids_param = ",".join(unique_batch_ids)
+
+        try:
+            tracks_resp = requests.get(
+                f"https://api.reccobeats.com/v1/track?ids={ids_param}",
+                headers=recHeaders,
+                timeout=15
+            )
+            tracks_resp.raise_for_status()
+            content = tracks_resp.json().get("content", [])
+        except requests.RequestException:
+            # If the batch call itself fails, leave all entries in this batch as None
+            continue
+     #Build set of IDs that Recco returned (others remain None)
+        returned_ids = {t.get("id") for t in content if t.get("id")}
+
+        # For each returned track, fetch audio-features
+        for track_id in returned_ids:
+            try:
+                feat_resp = requests.get(
+                    f'https://api.reccobeats.com/v1/track/%7Btrack_id%7D/audio-features',
+                    headers=recHeaders,
+                    timeout=15
+                )
+                feat_resp.raise_for_status()
+                features = feat_resp.json()
+                # Clean up optional keys if present
+                features.pop("id", None)
+                features.pop("href", None)
+            except requests.RequestException:
+                features = None  # leave as None on failure
+
+            # Write the (possibly None) features into ALL positions for this ID
+            for idx in id_to_indices.get(track_id, []):
+                results[idx]["song_features"] = features
+
+        # Any IDs from this batch that were NOT returned by Recco remain None
+        # thanks to our pre-filled results.
+
+    return results
 
 
 def geminiCall(prompt: str):
@@ -77,6 +127,7 @@ def geminiCall(prompt: str):
         model=model_name,
         contents=prompt
     ).text
+
 
 def get_spotify_id(title: str, artist: str):
     # Build query: e.g. 'track:Shape of You artist:Ed Sheeran'
@@ -125,6 +176,7 @@ def get_album_art(spotify_id: str, size: int = 640):
     # If requested size not found, return the first image
     return images[0]["url"]
 
+
 def parse_markdown_json(raw: str):
     """
     Parse a JSON string that may be wrapped in Markdown ```json fences.
@@ -144,27 +196,12 @@ def parse_markdown_json(raw: str):
 
     return json.loads(text)
 
-@app.route("/linkSend", methods=['POST'])
-def linkSend():
-    data = request.get_json()
-    playlist_id = data["playlist_id"]
 
-    # 54ZA9LXFvvFujmOVWXpHga
+def getRecommendations(spotify_ids: list, names: list, artists: list):
+    reccoSongDetails = getReccoSongProperties(spotify_ids)
 
-    url = f"https://api.spotify.com/v1/playlists/{playlist_id}"
-
-    headers = {
-        "Authorization": f"Bearer {access_token}"
-    }
-
-    response = requests.get(url, headers=headers)
-    response.raise_for_status()
-
-    reccoSongDetails = getReccoSongProperties(getSpotifyIDs(response.json()))
-
-    for i in range(len(response.json()["tracks"]["items"])):
-        track = response.json()["tracks"]["items"][i]["track"]
-        create_song(getSpotifyIDs(response.json())[i], track["name"], [artist["name"] for artist in track["artists"]], reccoSongDetails[i])
+    for i in range(len(reccoSongDetails)):
+        create_song(spotify_ids[i], names[i], artists[i], reccoSongDetails[i]["song_features"])
 
     geminiJSON = create_gemini_json()
     prompt = f"""SYSTEM:
@@ -204,9 +241,28 @@ Return ONLY the JSON array (30 items)."""
         if spotifyID == None:
             recommendationIDs.pop(index)
             continue
-        print(spotifyID)
         recommendationIDs[index]["spotify_id"] = spotifyID
         recommendationIDs[index]["image_url"] = get_album_art(spotifyID)
 
+    return recommendationIDs
 
-    return recommendationIDs, 200
+
+@app.route("/link/<playlist_id>", methods=['GET'])
+def playlistRecs(playlist_id: str):
+    # 54ZA9LXFvvFujmOVWXpHga
+    url = f"https://api.spotify.com/v1/playlists/{playlist_id}"
+    headers = {
+        "Authorization": f"Bearer {access_token}"
+    }
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+
+
+    artists = []
+    names = []
+    for i in range(len(response.json()["tracks"]["items"])):
+        track = response.json()["tracks"]["items"][i]["track"]
+        artists.append([artist["name"] for artist in track["artists"]])
+        names.append(track["name"])
+
+    return getRecommendations(getSpotifyIDs(response.json()), names, artists), 200
