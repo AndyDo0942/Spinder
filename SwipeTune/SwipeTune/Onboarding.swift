@@ -161,7 +161,9 @@ struct DreamOnboarding: View {
 
                     // 6) CTA screen → open import sheet
                     VStack(spacing: 16) {
+
                         Text("Ready to start?")
+                            .padding(.top, 50)
                             .font(.title.bold())
                             .foregroundStyle(.primary)
 
@@ -216,12 +218,13 @@ struct DreamOnboarding: View {
             .padding(.horizontal, 18)
         }
         .sheet(isPresented: $showPlaylistSheet) {
-            // Reuse your existing import sheet from SwipeKit.swift
             PlaylistLinkOnboarding { importedSongs in
-                // After successful import → mark onboarding done (ContentView will route to deck)
                 didOnboard = true
             }
             .presentationDetents([.medium, .large])
+            .presentationBackground(.clear)       // keep blending with the page bg
+            .presentationCornerRadius(28)         // ← curved sheet
+            .presentationDragIndicator(.hidden)   // ← hide gray handle for a cleaner look
         }
     }
 }
