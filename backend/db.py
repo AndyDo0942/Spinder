@@ -28,7 +28,6 @@ class Song(db.Model):
     mode = db.Column(db.Integer, nullable=True)
     time_signature = db.Column(db.Integer, nullable=True)
     
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     # Many-to-many relationship with artists
 
