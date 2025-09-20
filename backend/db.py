@@ -3,11 +3,11 @@ from datetime import datetime
 
 db = SQLAlchemy()
 # Association table for many-to-many relationship between songs and artists
-song_artist = db.Table(
+"""song_artist = db.Table(
     'song_artist',
     db.Column('song_id', db.Integer, db.ForeignKey('songs.id'), primary_key=True),
     db.Column('artist_id', db.Integer, db.ForeignKey('artists.id'), primary_key=True)
-)
+)"""
 
 class Song(db.Model):
     __tablename__ = "songs"
@@ -32,17 +32,15 @@ class Song(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     # Many-to-many relationship with artists
-    artists = db.relationship('Artist', secondary=song_artist, back_populates='songs')
+    artists = db.relationship('Artist', back_populates='songs', cascade="all, delete-orphan")
 
 class Artist(db.Model):
     __tablename__ = "artists"
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    spotify_id = db.Column(db.String(100), unique=True, nullable=False)
     name = db.Column(db.String(200), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
     # Many-to-many relationship with songs
-    songs = db.relationship('Song', secondary=song_artist, back_populates='artists')
+    song = db.relationship('Song', back_populates='artists')
+    song_id = db.Column(db.Integer, db.ForeignKey('songs.id'), nullable=False)
 
 class Recommendation(db.Model):
     __tablename__ = "recommendations"
