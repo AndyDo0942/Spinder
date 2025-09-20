@@ -1,4 +1,8 @@
+import ast
 import base64
+import urllib
+import json
+
 from flask_sqlalchemy import SQLAlchemy
 import requests
 from flask import request, jsonify, Flask
@@ -74,6 +78,71 @@ def geminiCall(prompt: str):
         contents=prompt
     ).text
 
+def get_spotify_id(title: str, artist: str):
+    # Build query: e.g. 'track:Shape of You artist:Ed Sheeran'
+    query = f"track:{title} artist:{artist}"
+    encoded_query = urllib.parse.quote(query)
+
+    url = f"https://api.spotify.com/v1/search?q={encoded_query}&type=track&limit=1"
+
+    headers = {
+        "Authorization": f"Bearer {access_token}"
+    }
+
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+
+    data = response.json()
+    items = data.get("tracks", {}).get("items", [])
+    if not items:
+        return None  # no track found
+
+    # First match
+    track = items[0]
+    spotify_id = track["id"]
+    name = track["name"]
+    artists = ", ".join(a["name"] for a in track["artists"])
+    return spotify_id
+
+
+def get_album_art(spotify_id: str, size: int = 640):
+    """
+    Returns the album art URL for a Spotify track ID.
+    size can be 640, 300, or 64 (the sizes Spotify gives).
+    """
+    url = f"https://api.spotify.com/v1/tracks/{spotify_id}"
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    resp = requests.get(url, headers=headers)
+    resp.raise_for_status()
+    track = resp.json()
+
+    images = track["album"]["images"]
+    # Find image with requested size or just return the largest
+    for img in images:
+        if img["height"] == size:
+            return img["url"]
+    # If requested size not found, return the first image
+    return images[0]["url"]
+
+def parse_markdown_json(raw: str):
+    """
+    Parse a JSON string that may be wrapped in Markdown ```json fences.
+    Returns a Python object (list, dict, etc.).
+    """
+    text = raw.strip()
+
+    # strip leading ```json or ```JSON
+    if text.lower().startswith("```json"):
+        text = text[7:].strip()  # remove '```json'
+    elif text.startswith("```"):
+        text = text[3:].strip()  # remove plain '```'
+
+    # strip trailing ```
+    if text.endswith("```"):
+        text = text[:-3].strip()
+
+    return json.loads(text)
 
 @app.route("/linkSend", methods=['POST'])
 def linkSend():
@@ -98,27 +167,46 @@ def linkSend():
         create_song(getSpotifyIDs(response.json())[i], track["name"], [artist["name"] for artist in track["artists"]], reccoSongDetails[i])
 
     geminiJSON = create_gemini_json()
-    prompt = f"""INSTRUCTIONS:
+    prompt = f"""SYSTEM:
+You are a music recommendation assistant. Output ONLY a JSON list (array) of EXACTLY 30 objects.
+Each object MUST have exactly these keys with these types:
+"name": string (track title)
+"artist": array of strings (list of artist names; use a list even if there is only one artist)
+No other text, no markdown, no extra keys.
+
+INSTRUCTIONS:
 Input is an array of seed songs with audio features and artist names.
-Return 30 DISTINCT Spotify track IDs of songs that are musically similar to the seeds.
-HARD RULES:
-1) Output must be a JSON array of 30 strings. No markdown, no keys, no comments.
-2) Do NOT include any seed Spotify IDs.
-3) Do NOT duplicate IDs.
-4) Do NOT invent or guess IDs. Only return IDs you are confident exist on Spotify.
-OPTIMIZATION GOALS (in order):
-A) Match the overall feature profile: keep tempo within ±8% of the median seed tempo; prefer similar danceability, energy, and valence; respect mode and time_signature when useful.
-B) Incorporate genre: infer likely genres for each seed using your knowledge of the track and artists. Favor recommendations that align with those inferred genres; include a mix across the top inferred genres.
-C) Respect the project categories provided below (e.g., moods/use-cases): prioritize candidates that satisfy those categories across the full set.
-D) Diversity: avoid over-representing a single artist; cap at 5 tracks per artist in the output.
+Recommend 30 DISTINCT tracks that are similar to the overall seed profile.
+You MUST infer likely genres of the seeds from your knowledge of the tracks/artists and use those inferred genres when selecting recommendations.
+Do NOT return any seed tracks.
+Diversity: cap at 2 tracks involving the same artist name (across any position in the artist list).
+
+OPTIMIZATION (in order):
+1) Match audio profile: keep tempo within ±8% of the median seed tempo; prefer similar danceability, energy, and valence; respect mode and time_signature when helpful.
+2) Incorporate inferred genres: align with the top inferred genres; include a mix across those genres.
+3) Reflect the categories below (moods/use-cases/constraints) across the set.
 
 SEEDS_JSON:
 {geminiJSON}
 
-OUTPUT:
-Return ONLY a JSON array of exactly 30 Spotify track IDs (strings). No additional text."""
+OUTPUT SHAPE EXAMPLE (structure only):
+[
+  {{"name": "Track Title 1", "artist": ["Primary Artist 1"]}},
+  {{"name": "Track Title 2", "artist": ["Artist A", "Artist B"]}},
+  ...
+]
+Return ONLY the JSON array (30 items)."""
 
-    recommendationIDs = geminiCall(prompt)
+    recommendationIDs = parse_markdown_json(geminiCall(prompt))
+
+    for index, recommendation in enumerate(recommendationIDs):
+        spotifyID = get_spotify_id(recommendation["name"], ",".join(recommendation["artist"]))
+        if spotifyID == None:
+            recommendationIDs.pop(index)
+            continue
+        print(spotifyID)
+        recommendationIDs[index]["spotify_id"] = spotifyID
+        recommendationIDs[index]["image_url"] = get_album_art(spotifyID)
 
 
     return recommendationIDs, 200
