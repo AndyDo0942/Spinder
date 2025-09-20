@@ -40,13 +40,11 @@ class Song(db.Model):
     time_signature = db.Column(db.Integer, nullable=True)
     
 
-
 class Recommendation(db.Model):
     __tablename__ = "recommendations"
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    spotify_song_id = db.Column(db.String(100), nullable=False)
     name = db.Column(db.String(200), nullable=False)
-    image_url = db.Column(db.String(500), nullable=True)
+    artist = db.column(db.JSON, nullable=False)
 
 # Utility functions
 
@@ -114,10 +112,8 @@ def create_gemini_json():
 def store_gemini_recommendations(recommended_songs):
     for rec_data in recommended_songs:
         recommendation = Recommendation(
-            spotify_song_id=rec_data['spotify_id'],
             name=rec_data['name'],
             artist = rec_data.get('artist'),
-            image_url=rec_data.get('image_url'),
         )
         
         db.session.add(recommendation)
