@@ -45,7 +45,7 @@ class Recommendation(db.Model):
     __tablename__ = "recommendations"
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     name = db.Column(db.String(200), nullable=False)
-    artist = db.column(db.JSON, nullable=False)
+    artist = db.Column(db.JSON, nullable=False)
 
 
 # Utility functions
