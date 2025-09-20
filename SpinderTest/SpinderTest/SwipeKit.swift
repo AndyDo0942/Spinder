@@ -298,3 +298,6 @@ struct LikedListView: View {
         .navigationTitle("Liked")
     }
 }
+#Preview {
+    SongSwipeHome()
+}

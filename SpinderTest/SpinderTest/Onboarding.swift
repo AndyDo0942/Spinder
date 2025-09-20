@@ -81,7 +81,7 @@ private struct StepRow: View {
 
 // MARK: - Import sheet (placeholder wiring)
 struct PlaylistLinkOnboarding: View {
-    @State private var input: String = ""
+    @State public var input: String = ""
     @State private var isLoading = false
     @State private var error: String?
     @Environment(\.dismiss) private var dismiss
@@ -272,3 +272,4 @@ struct DreamOnboarding: View {
         }
     }
 }
+#Preview { DreamOnboarding() }
