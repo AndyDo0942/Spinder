@@ -1,6 +1,6 @@
 
 ========================================
- Project Name: Spotinder
+ Project Name: Spinder
 ========================================
 
 Author: Andy Do, Ethan Chen, Ethan Ngai, Anatoli Monsalve

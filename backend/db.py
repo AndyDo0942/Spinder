@@ -114,8 +114,9 @@ def create_gemini_json():
 def store_gemini_recommendations(recommended_songs):
     for rec_data in recommended_songs:
         recommendation = Recommendation(
-            spotify_song_id=rec_data['spotify_song_id'],
+            spotify_song_id=rec_data['spotify_id'],
             name=rec_data['name'],
+            artist = rec_data.get('artist'),
             image_url=rec_data.get('image_url'),
         )
         
