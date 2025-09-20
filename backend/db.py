@@ -14,6 +14,7 @@ class Song(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     spotify_id = db.Column(db.String(100), unique=True, nullable=False)
     name = db.Column(db.String(200), nullable=False)
+    artists = db.Column(nullable=False) #list of strings
     
     # Audio features for Gemini analysis
     tempo = db.Column(db.Float, nullable=True)
@@ -32,14 +33,13 @@ class Song(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     # Many-to-many relationship with artists
-    artists = db.relationship('Artist', back_populates='songs', cascade="all, delete-orphan")
 
-class Artist(db.Model):
+"""class Artist(db.Model):
     __tablename__ = "artists"
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     name = db.Column(db.String(200), nullable=False)
     song = db.relationship('Song', back_populates='artists')
-    song_id = db.Column(db.Integer, db.ForeignKey('songs.id'), nullable=False)
+    song_id = db.Column(db.Integer, db.ForeignKey('songs.id'), nullable=False)"""
 
 class Recommendation(db.Model):
     __tablename__ = "recommendations"
@@ -64,6 +64,7 @@ def get_or_create_artist(spotify_id, name):
 def create_song(spotify_id, name, artists, audio_features):
     # Create the song
     song = Song(
+        artists = artists,
         spotify_id=spotify_id,
         name=name,
         # Audio features
@@ -81,13 +82,6 @@ def create_song(spotify_id, name, artists, audio_features):
         time_signature=audio_features.get('time_signature')
     )
     
-    # Handle artists
-    for artist_data in artists:
-        artist = get_or_create_artist(
-            spotify_id=artist_data['spotify_id'],
-            name=artist_data['name']
-        )
-        song.artists.append(artist)
     
     db.session.add(song)
     db.session.commit()
@@ -104,12 +98,10 @@ def create_gemini_json():
     gemini_data = []
     
     for song in songs:
-        # Get artist names as a list
-        artist_names = [artist.name for artist in song.artists]
         
         song_data = {
             "song_name": song.name,
-            "author_name": artist_names,  # List of artist names
+            "author_name": song.artists, # List of artist names
             "spotify_song_id": song.spotify_id,
             "audio_features": {
                 "tempo": song.tempo,
@@ -153,10 +145,6 @@ def get_song_count():
     """Get total number of songs in database"""
     return Song.query.count()
 
-def get_artist_count():
-    """Get total number of artists in database"""
-    return Artist.query.count()
-
 def clear_all_data():
     """Clear all data from all tables (useful for testing)"""
     Recommendation.query.delete()
@@ -164,3 +152,4 @@ def clear_all_data():
     Artist.query.delete()
     db.session.commit()
     return "All data cleared"
+
