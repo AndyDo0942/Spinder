@@ -7,7 +7,7 @@ db = SQLAlchemy()
     db.Column('song_id', db.Integer, db.ForeignKey('songs.id'), primary_key=True),
     db.Column('artist_id', db.Integer, db.ForeignKey('artists.id'), primary_key=True)
 )"""
-
+#yoo
 class Song(db.Model):
     __tablename__ = "songs"
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
