@@ -3,6 +3,7 @@ from flask_sqlalchemy import SQLAlchemy
 import requests
 from flask import request, jsonify, Flask
 from flask_cors import CORS
+from google import genai
 
 app = Flask(__name__)
 CORS(app)
@@ -31,6 +32,8 @@ response = requests.post(authOptions["url"], headers=authOptions["headers"], dat
 
 access_token = response.json()["access_token"]
 
+from db import create_song, create_gemini_json
+
 
 def getSpotifyIDs(SpotifyJSON):
     SpotifyIDs = []
@@ -40,18 +43,33 @@ def getSpotifyIDs(SpotifyJSON):
 
 
 def getReccoSongProperties(SpotifyIDs):
+    """
+    Gets the song properties from the Recco API
+
+    :param SpotifyIDs: list of Spotify IDs
+    :return: array of song properties
+    """
     recHeaders = {
         'Accept': 'application/json'}
 
-    reccoBeatsRes = requests.get(f"https://api.reccobeats.com/v1/track?ids={",".join(SpotifyIDs)}", headers=recHeaders,
-                                 data={})
+    reccoBeatsRes = requests.get(f"https://api.reccobeats.com/v1/track?ids={",".join(SpotifyIDs)}", headers=recHeaders)
     reccoSongDetails = []
     for track in reccoBeatsRes.json()["content"]:
-        reccoSongDetails.append(
-            requests.get(f"https://api.reccobeats.com/v1/track/{track["id"]}/audio-features", headers=recHeaders,
-                         data={}).json())
-
+        rawReturn = requests.get(f"https://api.reccobeats.com/v1/track/{track["id"]}/audio-features",
+                         headers=recHeaders).json()
+        rawReturn.pop("id")
+        rawReturn.pop("href")
+        reccoSongDetails.append(rawReturn)
     return reccoSongDetails
+
+
+def geminiCall(prompt: str):
+    client = genai.Client(api_key="AIzaSyBRFtS9ieNV0i4QvhqeX9afbc9oKOUJlWo")
+    model_name = "gemini-2.5-flash"
+    return client.models.generate_content(
+        model=model_name,
+        contents=prompt
+    ).text
 
 
 @app.route("/linkSend", methods=['POST'])
@@ -70,7 +88,14 @@ def linkSend():
     response = requests.get(url, headers=headers)
     response.raise_for_status()
 
-    reccoSongDetails = getReccoSongProperties(response.json())
+    reccoSongDetails = getReccoSongProperties(getSpotifyIDs(response.json()))
 
-    print(reccoSongDetails)
-    return response.json(), response.status_code
+    for i in range(len(response.json()["tracks"]["items"])):
+        track = response.json()["tracks"]["items"][i]["track"]
+        create_song(getSpotifyIDs(response.json())[i], track["name"], track["artists"], reccoSongDetails[i])
+
+    geminiJSON = create_gemini_json()
+
+
+
+    return geminiJSON, 200
