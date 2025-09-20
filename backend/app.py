@@ -11,7 +11,7 @@ CORS(app)
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///mydatabase.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-db = SQLAlchemy(app)
+
 
 client_id = "ed7a342821fb4142af5a9feae25d3395"
 client_secret = "5f5df8bdf93d458f89ca1e17da6131af"
@@ -32,8 +32,8 @@ response = requests.post(authOptions["url"], headers=authOptions["headers"], dat
 
 access_token = response.json()["access_token"]
 
-from db import create_song, create_gemini_json
-
+from db import create_song, create_gemini_json, db
+db.init_app(app)
 
 def getSpotifyIDs(SpotifyJSON):
     SpotifyIDs = []
@@ -92,7 +92,7 @@ def linkSend():
 
     for i in range(len(response.json()["tracks"]["items"])):
         track = response.json()["tracks"]["items"][i]["track"]
-        create_song(getSpotifyIDs(response.json())[i], track["name"], track["artists"], reccoSongDetails[i])
+        create_song(getSpotifyIDs(response.json())[i], track["name"], track["artists"]["name"], reccoSongDetails[i])
 
     geminiJSON = create_gemini_json()
 
