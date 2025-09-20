@@ -1,5 +1,4 @@
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime
 
 db = SQLAlchemy()
 # Association table for many-to-many relationship between songs and artists
@@ -12,7 +11,7 @@ db = SQLAlchemy()
 class Song(db.Model):
     __tablename__ = "songs"
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    spotify_id = db.Column(db.String(100), unique=True, nullable=False)
+    spotify_id = db.Column(db.String(100), nullable=False)
     name = db.Column(db.String(200), nullable=False)
     artists = db.Column(db.JSON, nullable=False) #list of strings
     # Audio features for Gemini analysis
@@ -46,9 +45,6 @@ class Recommendation(db.Model):
     spotify_song_id = db.Column(db.String(100), nullable=False)
     name = db.Column(db.String(200), nullable=False)
     image_url = db.Column(db.String(500), nullable=True)
-    external_url = db.Column(db.String(500), nullable=True)
-    preview_url = db.Column(db.String(500), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 # Utility functions
 """def get_or_create_artist(spotify_id, name):
@@ -127,8 +123,6 @@ def store_gemini_recommendations(recommended_songs):
             spotify_song_id=rec_data['spotify_song_id'],
             name=rec_data['name'],
             image_url=rec_data.get('image_url'),
-            external_url=rec_data.get('external_url'),
-            preview_url=rec_data.get('preview_url')
         )
         
         db.session.add(recommendation)
