@@ -9,9 +9,10 @@ struct ContentView: View {
     @AppStorage("didOnboard") private var didOnboard = false
     var body: some View {
         if didOnboard {
-            SongSwipeHome()    // or RootAppView() if you want the playlist sheet path
+           // SongSwipeHome()    // or
+            SongSwipeHome()
         } else {
-            DreamOnboarding()
+            RootAppView()
         }
     }
 }
