@@ -14,7 +14,7 @@ class Song(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     spotify_id = db.Column(db.String(100), unique=True, nullable=False)
     name = db.Column(db.String(200), nullable=False)
-    artists = db.Column(nullable=False) #list of strings
+    artists = db.Column(db.JSON, nullable=False) #list of strings
     
     # Audio features for Gemini analysis
     tempo = db.Column(db.Float, nullable=True)
@@ -52,14 +52,14 @@ class Recommendation(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 # Utility functions
-def get_or_create_artist(spotify_id, name):
-    """Get existing artist or create new one"""
+"""def get_or_create_artist(spotify_id, name):
+    Get existing artist or create new one
     artist = Artist.query.filter_by(spotify_id=spotify_id).first()
     if not artist:
         artist = Artist(spotify_id=spotify_id, name=name)
         db.session.add(artist)
         db.session.commit()
-    return artist
+    return artist"""
 
 def create_song(spotify_id, name, artists, audio_features):
     # Create the song
