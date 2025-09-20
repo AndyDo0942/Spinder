@@ -32,13 +32,10 @@ response = requests.post(authOptions["url"], headers=authOptions["headers"], dat
 
 access_token = response.json()["access_token"]
 
-from db import create_song, create_gemini_json, db, reset_schema
+from db import create_song, create_gemini_json, db
 db.init_app(app)
 with app.app_context():
-    db.reset_schema()
     db.create_all()
-
-
 def getSpotifyIDs(SpotifyJSON):
     SpotifyIDs = []
     for track in SpotifyJSON["tracks"]["items"]:
