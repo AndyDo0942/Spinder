@@ -266,9 +266,15 @@ struct SongSwipeHome: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                // Custom Gradient Title
+                Text("Spinder")
+                    .font(.system(size: 36, weight: .heavy, design: .rounded))
+                    .gradientText() // ✅ uses the extension that applies Palette.grad
+                    .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 4)
+                    .padding(.top, 10)
+
                 SongSwipeDeck(store: store)
             }
-            .navigationTitle("Spinder")
             .toolbar {
                 NavigationLink {
                     LikedListView(liked: store.liked)
@@ -280,6 +286,7 @@ struct SongSwipeHome: View {
         }
     }
 }
+
 
 struct LikedListView: View {
     let liked: [Song]
