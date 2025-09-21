@@ -419,6 +419,35 @@ func simpleGetUrlRequest(url: String, completion: @escaping (String?) -> Void) {
     .resume()
 }
 
+struct Network {
+    static let shared: URLSession = {
+        let cfg = URLSessionConfiguration.default
+        cfg.timeoutIntervalForRequest = 30      // per request handshake / data
+        cfg.timeoutIntervalForResource = 120    // entire transfer
+        cfg.waitsForConnectivity = true         // cellular / wifi recoveries
+        return URLSession(configuration: cfg)
+    }()
+}
+
+@MainActor
+func submitPlaylistURL(_ pasted: String) async throws -> String {
+    // Build http://127.0.0.1:5000/link?url=<pasted>
+    var comps = URLComponents(string: "http://127.0.0.1:5000/link" + pasted)!
+
+    var req = URLRequest(url: comps.url!)
+    req.httpMethod = "GET"
+    req.timeoutInterval = 60  // this specific call
+
+    let (data, resp) = try await Network.shared.data(for: req)
+    guard let http = resp as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+    guard (200...299).contains(http.statusCode) else {
+        throw NSError(domain: "HTTP", code: http.statusCode,
+                      userInfo: [NSLocalizedDescriptionKey: "Server returned \(http.statusCode)"])
+    }
+    return String(data: data, encoding: .utf8) ?? ""
+}
+
+
 #Preview {
     SongSwipeHome()
 }
