@@ -335,7 +335,7 @@ struct SongCard: View {
                         Rectangle()
                             .fill(.ultraThinMaterial)
                             .overlay(
-                                VStack(spacing: 12) {
+                                VStack(spacing: 30) {
                                     Image(systemName: "photo")
                                         .font(.largeTitle)
                                         .foregroundStyle(
@@ -835,15 +835,15 @@ struct SongSwipeHome: View {
                 // Title row
                 HStack(spacing: -7) {
                     Text("Spinder")
-                        .font(.system(size: 30, weight: .heavy, design: .rounded))
+                        .font(.system(size: 45, weight: .heavy, design: .rounded))
                         .gradientText()                    // apply gradient to the text only
 
                     Image("SpinderLogo")
                         .resizable()
                         .scaledToFit()
-                        .frame(width: 65, height: 65)      // smaller so it sits nicely with the text
+                        .frame(width: 75, height: 75)      // smaller so it sits nicely with the text
                 }
-                .padding(.top, 10)
+                .padding(.top, -25)
                 .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 4)
 
                 SongSwipeDeck(store: store)
