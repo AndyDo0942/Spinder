@@ -81,7 +81,7 @@ private struct StepRow: View {
 
 // MARK: - Import sheet (placeholder wiring)
 struct PlaylistLinkOnboarding: View {
-    @State public var input: String = ""
+    @State private var input: String = ""
     @State private var isLoading = false
     @State private var error: String?
     @Environment(\.dismiss) private var dismiss
@@ -137,30 +137,21 @@ struct DreamOnboarding: View {
     var body: some View {
         ZStack {
             DreamyBackdrop()
-
+            
             VStack(spacing: 12) {
                 // Header: show wordmark only after first page
-                if page >= 1 {
-                    Text("Spinder")
-                        .font(.system(size: 32, weight: .heavy, design: .rounded))
-                        .gradientText()
-                        .padding(.top, 10)
-                } else {
-                    Spacer().frame(height: 10)
-                }
+                
 
                 TabView(selection: $page) {
                     // 1) Intro — centered wordmark
                     VStack(spacing: 14) {
                         Spacer()
-                        Text("Spinder")
-                            .font(.system(size: 56, weight: .heavy, design: .rounded))
-                            .gradientText()
-                            .padding(.bottom, 6)
                         Text("Welcome to the sound of serendipity.")
+                            .padding(.top,60)
                             .font(.title3).foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, 28)
+                            
                         Spacer()
                     }
                     .tag(0)
@@ -179,7 +170,9 @@ struct DreamOnboarding: View {
                     // 3) Solution + slogan
                     VStack(spacing: 14) {
                         HeroIcon(systemName: "wand.and.stars")
-                        Text("Meet your music matchmaker.").font(.title.bold()).foregroundStyle(.primary)
+                        Text("Meet your music matchmaker.")
+                            .multilineTextAlignment(.center)
+                                .frame(maxWidth: .infinity, alignment: .center).padding(.horizontal, 20).font(.title.bold())
                         Text("Swipe to discover. Like what you love. Skip what you don’t.")
                             .foregroundStyle(.secondary).multilineTextAlignment(.center)
                             .padding(.horizontal, 28)
@@ -212,28 +205,11 @@ struct DreamOnboarding: View {
                     }
                     .tag(3)
 
-                    // 5) Steps
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack(spacing: 12) {
-                            HeroIcon(systemName: "list.number")
-                            Text("The Flow").font(.title.bold()).foregroundStyle(.primary)
-                        }
-                        .padding(.bottom, 6)
 
-                        StepRow(number: 1, title: "Upload your Spotify playlist", icon: "link.badge.plus")
-                        StepRow(number: 2, title: "Swipe songs — right to like, left to skip", icon: "hand.draw.fill")
-                        StepRow(number: 3, title: "AI builds your Taste Profile", icon: "wand.and.stars")
-                        StepRow(number: 4, title: "Discover new songs!", icon: "sparkles.rectangle.stack")
-
-                        Spacer()
-                    }
-                    .padding(.horizontal, 28)
-                    .tag(4)
-
-                    // 6) CTA
+                    // 5) CTA
                     VStack(spacing: 16) {
                         HeroIcon(systemName: "link.badge.plus")
-                            .padding(.top,100)
+                            .padding(.top,250   )
                         Text("Ready to start?").font(.title.bold()).foregroundStyle(.primary)
                         Text("Kick things off by importing a playlist. We’ll personalize your first deck from it.")
                             .multilineTextAlignment(.center)
@@ -255,13 +231,42 @@ struct DreamOnboarding: View {
                             .foregroundStyle(.secondary)
                         Spacer(minLength: 8)
                     }
-                    .tag(5)
+                    .tag(4)
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
-
-                PageDots(count: 6, index: page).padding(.bottom, 8)
+                
+                PageDots(count: 5, index: page).padding(.bottom, 8)
             }
             .padding(.horizontal, 18)
+            .overlay {
+                GeometryReader { proxy in
+                    // positions for intro vs. header
+                    let centerY = proxy.size.height * 0.28
+                    let headerY: CGFloat = 12
+
+                    HStack(spacing: -20) {
+                        Text("Spinder")
+                            .font(.system(size: 56, weight: .heavy, design: .rounded))
+                            .gradientText()
+
+                        Image("SpinderLogo")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 120, height: 120) // adjust to balance text
+                    }
+                        .font(.system(size: 56, weight: .heavy, design: .rounded))
+                        .padding(.top,200)
+                        .gradientText()
+                        .scaleEffect(page == 0 ? 1.0 : 0.57, anchor: .center) // shrink on page 1+
+                        .position(
+                            x: proxy.size.width / 2,
+                            y: page == 0 ? centerY : headerY + 20              // slide up
+                        )
+                        .animation(.spring(response: 0.55, dampingFraction: 0.9), value: page)
+                        .allowsHitTesting(false)
+                }
+            }
+
         }
         .sheet(isPresented: $showPlaylistSheet) {
             PlaylistLinkOnboarding { _ in didOnboard = true }
