@@ -125,7 +125,6 @@ def store_gemini_recommendations(recommended_songs):
         )
 
         db.session.add(recommendation)
-
     db.session.commit()
     return len(recommended_songs)
 
@@ -138,6 +137,7 @@ def get_recommendations():
             "name": rec.name,
             "artist": rec.artist,
         })
+    return recommended_data
 
 
 def get_song_count():

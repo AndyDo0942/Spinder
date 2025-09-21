@@ -8,6 +8,9 @@ import requests
 from flask import request, jsonify, Flask
 from flask_cors import CORS
 from google import genai
+import re
+
+
 
 app = Flask(__name__)
 CORS(app)
@@ -49,75 +52,123 @@ def getSpotifyIDs(SpotifyJSON):
 
 from collections import defaultdict
 
+# extract a 22-char spotify track id from plain id / URI / URL
+_SPOTIFY_ID_RE = re.compile(r'([0-9A-Za-z]{22})')
+
+def _normalize_spotify_id(value):
+    if not value or not isinstance(value, str):
+        return None
+    m = _SPOTIFY_ID_RE.search(value)
+    return m.group(1) if m else None
+
+def _chunks(lst, n):
+    for i in range(0, len(lst), n):
+        yield lst[i:i+n]
+
 def getReccoSongProperties(SpotifyIDs):
     """
-    Fetch ReccoBeats audio-features for each Spotify ID.
-    Returns a list the SAME length & order as SpotifyIDs:
-        [ {'spotify_id': <id>, 'song_features': <dict|None>}, ... ]
-    If a track is missing in Recco or the features call fails, song_features is None.
+    Returns a list aligned with SpotifyIDs:
+      [ {"spotify_id": <input_id>, "song_features": dict|None}, ... ]
+    Uses Recco /v1/track?ids=<spotify_ids> then fetches audio-features with Recco's INTERNAL id,
+    and writes features back to positions matching the ORIGINAL SpotifyIDs. Missing ones -> None.
     """
     recHeaders = {'Accept': 'application/json'}
 
-    # Pre-fill results with None to preserve order; one entry per input ID
-    results = [
-        {"spotify_id": sid, "song_features": None}
-        for sid in SpotifyIDs
-    ]
+    # Pre-fill to preserve index alignment
+    results = [{"spotify_id": sid, "song_features": None} for sid in SpotifyIDs]
 
-    # Support duplicate IDs by mapping id -> list of indices
+    # Handle duplicates: map normalized spotify id -> all indices in input
     id_to_indices = defaultdict(list)
     for idx, sid in enumerate(SpotifyIDs):
-        id_to_indices[sid].append(idx)
+        norm = _normalize_spotify_id(sid)
+        if norm:
+            id_to_indices[norm].append(idx)
 
-    # Helper: yield chunks of up to 40 IDs
-    def chunks(lst, n):
-        for i in range(0, len(lst), n):
-            yield lst[i:i+n]
+    for batch in _chunks(SpotifyIDs, 40):
+        # de-dup within batch while keeping order
+        seen = set()
+        unique_norm_ids = []
+        for sid in batch:
+            norm = _normalize_spotify_id(sid)
+            if norm and norm not in seen:
+                seen.add(norm)
+                unique_norm_ids.append(norm)
 
-    # Process in batches of 40
-    for batch_ids in chunks(SpotifyIDs, 40):
-        # De-duplicate inside the batch so we don't over-query
-        unique_batch_ids = list(dict.fromkeys(batch_ids))
-        ids_param = ",".join(unique_batch_ids)
+        if not unique_norm_ids:
+            continue
 
+        ids_param = ",".join(unique_norm_ids)
+
+        # 1) get Recco tracks for these Spotify IDs
         try:
             tracks_resp = requests.get(
                 f"https://api.reccobeats.com/v1/track?ids={ids_param}",
-                headers=recHeaders,
-                timeout=15
+                headers=recHeaders, timeout=15
             )
             tracks_resp.raise_for_status()
             content = tracks_resp.json().get("content", [])
         except requests.RequestException:
-            # If the batch call itself fails, leave all entries in this batch as None
+            # batch failed => leave all as None
             continue
-     #Build set of IDs that Recco returned (others remain None)
-        returned_ids = {t.get("id") for t in content if t.get("id")}
 
-        # For each returned track, fetch audio-features
-        for track_id in returned_ids:
-            try:
-                feat_resp = requests.get(
-                    f'https://api.reccobeats.com/v1/track/%7Btrack_id%7D/audio-features',
-                    headers=recHeaders,
-                    timeout=15
+        # 2) for each returned track, find BOTH: recco_internal_id and spotify_id
+        for t in content:
+            # Recco internal id (used to call audio-features):
+            recco_internal_id = t.get("id")  # this is Recco's internal id
+
+            # Try to recover the spotify id from common fields
+            # Adjust these keys if your payload uses different names.
+            spotify_id_raw = (
+                t.get("spotify_id")
+                or t.get("spotifyId")
+                or t.get("spotify")              # could be a dict or string
+                or t.get("uri")                  # e.g. spotify:track:xxxx
+                or t.get("href")                 # sometimes a URL
+                or t.get("external_id")
+                or t.get("externalId")
+                or ""
+            )
+
+            # If "spotify" is a dict like {"id": "..."} handle that:
+            if isinstance(spotify_id_raw, dict):
+                spotify_id_raw = (
+                    spotify_id_raw.get("id")
+                    or spotify_id_raw.get("spotify_id")
+                    or spotify_id_raw.get("uri")
+                    or ""
                 )
-                feat_resp.raise_for_status()
-                features = feat_resp.json()
-                # Clean up optional keys if present
-                features.pop("id", None)
-                features.pop("href", None)
-            except requests.RequestException:
-                features = None  # leave as None on failure
 
-            # Write the (possibly None) features into ALL positions for this ID
-            for idx in id_to_indices.get(track_id, []):
+            norm_spotify_id = _normalize_spotify_id(spotify_id_raw)
+            if not norm_spotify_id:
+                # as a fallback, sometimes Recco echoes 'original_id' etc.
+                norm_spotify_id = _normalize_spotify_id(t.get("original_id", ""))
+
+            if not recco_internal_id or not norm_spotify_id:
+                # can't map or can't fetch features; skip
+                continue
+
+            # 3) fetch audio-features using Recco's INTERNAL id
+            features = None
+            try:
+                feat = requests.get(
+                    f"https://api.reccobeats.com/v1/track/{recco_internal_id}/audio-features",
+                    headers=recHeaders, timeout=15
+                )
+                feat.raise_for_status()
+                features = feat.json() or None
+                if isinstance(features, dict):
+                    features.pop("id", None)
+                    features.pop("href", None)
+            except requests.RequestException:
+                features = None  # leave None on failure
+
+            # 4) write features back to ALL indices where this spotify id appears
+            for idx in id_to_indices.get(norm_spotify_id, []):
                 results[idx]["song_features"] = features
 
-        # Any IDs from this batch that were NOT returned by Recco remain None
-        # thanks to our pre-filled results.
-
+        # any IDs from this batch that Recco didn't return remain None (pre-filled)
     return results
+
 
 
 def geminiCall(prompt: str):
@@ -196,7 +247,7 @@ def parse_markdown_json(raw: str):
 
     return json.loads(text)
 
-
+from db import store_gemini_recommendations, get_recommendations
 def getRecommendations(spotify_ids: list, names: list, artists: list):
     reccoSongDetails = getReccoSongProperties(spotify_ids)
 
@@ -215,7 +266,7 @@ INSTRUCTIONS:
 Input is an array of seed songs with audio features and artist names.
 Recommend 30 DISTINCT tracks that are similar to the overall seed profile.
 You MUST infer likely genres of the seeds from your knowledge of the tracks/artists and use those inferred genres when selecting recommendations.
-Do NOT return any seed tracks.
+Do NOT return any seed tracks or those specifically disallowed. In other words DO NOT recommend any songs that are already mentioned in the following JSONS or that you have already mentioned.
 Diversity: cap at 2 tracks involving the same artist name (across any position in the artist list).
 
 OPTIMIZATION (in order):
@@ -226,6 +277,9 @@ OPTIMIZATION (in order):
 SEEDS_JSON:
 {geminiJSON}
 
+DISALLOWED_JSON:
+{get_recommendations()}
+
 OUTPUT SHAPE EXAMPLE (structure only):
 [
   {{"name": "Track Title 1", "artist": ["Primary Artist 1"]}},
@@ -234,6 +288,7 @@ OUTPUT SHAPE EXAMPLE (structure only):
 ]
 Return ONLY the JSON array (30 items)."""
 
+    print(prompt)
     recommendationIDs = parse_markdown_json(geminiCall(prompt))
 
     for index, recommendation in enumerate(recommendationIDs):
@@ -244,6 +299,7 @@ Return ONLY the JSON array (30 items)."""
         recommendationIDs[index]["spotify_id"] = spotifyID
         recommendationIDs[index]["image_url"] = get_album_art(spotifyID)
 
+    store_gemini_recommendations(recommendationIDs)
     return recommendationIDs
 
 
