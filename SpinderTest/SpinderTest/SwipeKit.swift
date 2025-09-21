@@ -239,7 +239,7 @@ struct SongSwipeDeck: View {
         .safeAreaInset(edge: .bottom) {
             if let id = store.deck.first?.spotifyID {
                 SpotifyEmbedView(trackID: id)
-                    .frame(height:300)
+                    .frame(height: 200)
                     .clipShape(RoundedRectangle(cornerRadius: 14))
                     .padding(.horizontal, 20)
                     .padding(.bottom, 12)
@@ -254,7 +254,7 @@ struct SongSwipeDeck: View {
 enum DemoData {
     static let songs: [Song] = [
         Song(title: "Midnight City", artists: ["M83"], artworkURL: URL(string: "https://picsum.photos/seed/a/600/600"), previewURL: nil, spotifyID: "1Ukxccao1BlWrPhYkcXbwZ"),
-        Song(title: "Blinding Lights", artists: ["The Weeknd"], artworkURL: URL(string: "https://picsum.photos/seed/b/600/600"), previewURL: nil, spotifyID: nil),
+        Song(title: "Blinding Lights", artists: ["The Weeknd"], artworkURL: URL(string: "https://picsum.photos/seed/b/600/600"), previewURL: nil, spotifyID: "1Ukxccao1BlWrPhYkcXbwZ"),
         Song(title: "Levitating", artists: ["Dua Lipa"], artworkURL: URL(string: "https://picsum.photos/seed/c/600/600"), previewURL: nil, spotifyID: "5meVa5klVlJalupZTvv5XX")
     ]
 }
