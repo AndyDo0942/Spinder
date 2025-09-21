@@ -113,22 +113,23 @@ struct PlaylistLinkOnboarding: View {
                 if let error { Text(error).font(.footnote).foregroundStyle(.red) }
 
                 Button {
-                    simpleGetUrlRequest(url: "http://127.0.0.1:5000/link/" + input) { text in
-                            DispatchQueue.main.async {
-                                responseText = text
-                            }
+                    Task {
+                        isLoading = true
+                        defer { isLoading = false }
+                        do {
+                            let result = try await submitPlaylistURL(input)
+                            print("✅ server said:", result)
+                            onImported([])   // proceed to next screen / deck
+                            dismiss()
+                        } catch {
+                            self.error = (error as NSError).localizedDescription
+                            print("❌", error)
                         }
-
-                    // For now, just dismiss and let Home fetch from backend
-                    // For now, just dismiss and let Home fetch from backend
-                    
-                    onImported([])
-                    dismiss()
+                    }
                 } label: {
-                    Text("Use This Playlist")
-                        .bold()
-                        .foregroundStyle(.black)
+                    Text(isLoading ? "Importing…" : "Use This Playlist").bold()
                 }
+                .disabled(isLoading)
                 .buttonStyle(GlassGradientButtonStyle())
 
 
