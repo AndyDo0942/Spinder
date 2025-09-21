@@ -5,12 +5,11 @@ import Combine
 
 // MARK: - Model
 struct Song: Identifiable, Equatable {
-    let id = UUID()
-    let title: String
+    let id: String
+    let name: String
     let artists: [String]
-    let artworkURL: URL?
-    let previewURL: URL?           // unused for Spotify embed; keep for future Apple Music
-    let spotifyID: String?         // used for the 30s embed
+    let image_url: URL
+    let spotifyID: String        // used for the 30s embed
 
     var artistDisplay: String { artists.joined(separator: ", ") }
 }
@@ -349,9 +348,7 @@ struct SongSwipeHome: View {
                 } label: { Image(systemName: "heart") }
             }
         }
-        .task {
-            await store.loadFromBackend()   // pulls JSON from Flask when Home appears
-        }
+        
     }
 }
 
@@ -394,30 +391,6 @@ struct LikedListView: View {
         // TODO!!!!: hook into backend/Spotify API to actually save
     }
 }
-func simpleGetUrlRequest(url: String, completion: @escaping (String?) -> Void) {
-    guard let url = URL(string: url) else {
-        print("❌ Invalid URL string:", url)
-        completion(nil)
-        return
-    }
-
-    URLSession.shared.dataTask(with: url) { data, response, error in
-        if let error = error {
-            print("❌ Request failed:", error.localizedDescription)
-            completion(nil)
-            return
-        }
-
-        guard let data = data,
-              let text = String(data: data, encoding: .utf8) else {
-            completion(nil)
-            return
-        }
-
-        completion(text)  // return to caller
-    }
-    .resume()
-}
 
 struct Network {
     static let shared: URLSession = {
@@ -432,7 +405,7 @@ struct Network {
 @MainActor
 func submitPlaylistURL(_ pasted: String) async throws -> String {
     // Build http://127.0.0.1:5000/link?url=<pasted>
-    var comps = URLComponents(string: "http://127.0.0.1:5000/link" + pasted)!
+    let comps = URLComponents(string: "http://127.0.0.1:5000/link/" + pasted)!
 
     var req = URLRequest(url: comps.url!)
     req.httpMethod = "GET"
