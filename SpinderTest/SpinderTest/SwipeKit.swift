@@ -239,7 +239,7 @@ struct SongSwipeDeck: View {
         .safeAreaInset(edge: .bottom) {
             if let id = store.deck.first?.spotifyID {
                 SpotifyEmbedView(trackID: id)
-                    .frame(height: 200)
+                    .frame(height: 400)
                     .clipShape(RoundedRectangle(cornerRadius: 14))
                     .padding(.horizontal, 20)
                     .padding(.bottom, 12)
