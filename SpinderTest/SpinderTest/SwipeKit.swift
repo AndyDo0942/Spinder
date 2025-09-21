@@ -243,56 +243,75 @@ import WebKit
 
 struct SpotifyEmbedView: UIViewRepresentable {
     let trackID: String
+    /// 88–100 looks best. 96 is a good default.
+    var height: CGFloat = 96
 
     func makeUIView(context: Context) -> WKWebView {
-        let wv = WKWebView()
+        let cfg = WKWebViewConfiguration()
+        cfg.allowsInlineMediaPlayback = true
+        let wv = WKWebView(frame: .zero, configuration: cfg)
         wv.isOpaque = false
         wv.backgroundColor = .clear
         wv.scrollView.isScrollEnabled = false
-
-        wv.loadHTMLString(makeHTML(for: trackID), baseURL: nil)
+        wv.scrollView.bounces = false
+        wv.loadHTMLString(makeHTML(for: trackID, height: Int(height)), baseURL: nil)
         return wv
     }
 
     func updateUIView(_ uiView: WKWebView, context: Context) {
-        uiView.loadHTMLString(makeHTML(for: trackID), baseURL: nil)
+        uiView.loadHTMLString(makeHTML(for: trackID, height: Int(height)), baseURL: nil)
     }
 
-    private func makeHTML(for trackID: String) -> String {
+    private func makeHTML(for trackID: String, height: Int) -> String {
         """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <script src="https://open.spotify.com/embed/iframe-api/v1" async></script>
-        </head>
-        <body style="margin:0;background:transparent;">
-            <div id="embed-iframe"></div>
-            <script>
-                window.onSpotifyIframeApiReady = (IFrameAPI) => {
-                    const element = document.getElementById('embed-iframe');
-                    const options = {
-                        uri: 'spotify:track:\(trackID)'
-                    };
-                    const callback = (EmbedController) => {
-                        // Try autoplay with mute workaround
-                        EmbedController.setVolume(0); // start muted
-                        EmbedController.play();
-
-                        // Unmute after a short delay (500ms)
-                        setTimeout(() => {
-                            EmbedController.setVolume(1);
-                        }, 500);
-                    };
-                    IFrameAPI.createController(element, options, callback);
-                };
-            </script>
-        </body>
-        </html>
-        """
+        <!doctype html>
+        <html>
+        <head>
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <style>
+            html,body{margin:0;padding:0;background:transparent;overflow:hidden;}
+            /* Outer wrapper defines the visual size + rounded corners */
+            .wrap{
+              width:100%;
+              height:\(height)px;
+              border-radius:14px;
+              overflow:hidden;
+              background:transparent;
+              position:relative;
+            }
+            /* Ensure the embed fills the wrapper with no extra margins */
+            iframe, #embed-iframe {
+              position:absolute;
+              inset:0;
+              width:100%;
+              height:100%;
+              border:0;
+            }
+          </style>
+          <script src="https://open.spotify.com/embed/iframe-api/v1" async></script>
+        </head>
+        <body>
+          <div class="wrap">
+            <div id="embed-iframe"></div>
+          </div>
+          <script>
+            window.onSpotifyIframeApiReady = (IFrameAPI) => {
+              const el = document.getElementById('embed-iframe');
+              const options = {
+                uri: 'spotify:track:\(trackID)',
+                theme: 'dark'
+              };
+              IFrameAPI.createController(el, options, (controller) => {
+                // Avoid autoplay tricks—causes layout jank and won't work on iOS.
+              });
+            };
+          </script>
+        </body>
+        </html>
+        
+"""
     }
 }
-
 
 
 
@@ -325,16 +344,38 @@ struct SongCard: View {
                             }
                     case .failure(let error):
                         Rectangle()
-                            .fill(Color.gray.opacity(0.15))
+                            .fill(.ultraThinMaterial)
                             .overlay(
-                                VStack {
+                                VStack(spacing: 12) {
                                     Image(systemName: "photo")
                                         .font(.largeTitle)
-                                        .foregroundColor(.gray)
+                                        .foregroundStyle(
+                                            LinearGradient(
+                                                colors: [.purple, .blue],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
+                                        )
                                     Text("Image failed to load")
                                         .font(.caption)
-                                        .foregroundColor(.gray)
+                                        .foregroundStyle(.white.opacity(0.8))
                                 }
+                                .padding(20)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 16)
+                                        .fill(.ultraThinMaterial)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 16)
+                                                .stroke(
+                                                    LinearGradient(
+                                                        colors: [.purple.opacity(0.3), .blue.opacity(0.3)],
+                                                        startPoint: .topLeading,
+                                                        endPoint: .bottomTrailing
+                                                    ),
+                                                    lineWidth: 1
+                                                )
+                                        )
+                                )
                             )
                             .onAppear {
                                 print("❌ Image failed for: \(song.name)")
@@ -344,15 +385,49 @@ struct SongCard: View {
                             }
                     case .empty:
                         Rectangle()
-                            .fill(Color.gray.opacity(0.15))
+                            .fill(.ultraThinMaterial)
                             .overlay(
-                                VStack {
+                                VStack(spacing: 12) {
                                     ProgressView()
-                                        .scaleEffect(0.8)
+                                        .scaleEffect(1.2)
+                                        .tint(.white)
+                                        .background(
+                                            Circle()
+                                                .fill(.ultraThinMaterial)
+                                                .frame(width: 60, height: 60)
+                                                .overlay(
+                                                    Circle()
+                                                        .stroke(
+                                                            LinearGradient(
+                                                                colors: [.purple.opacity(0.4), .blue.opacity(0.4)],
+                                                                startPoint: .topLeading,
+                                                                endPoint: .bottomTrailing
+                                                            ),
+                                                            lineWidth: 2
+                                                        )
+                                                )
+                                        )
                                     Text("Loading...")
                                         .font(.caption)
-                                        .foregroundColor(.gray)
+                                        .fontWeight(.medium)
+                                        .foregroundStyle(.white.opacity(0.9))
                                 }
+                                .padding(20)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 16)
+                                        .fill(.ultraThinMaterial)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 16)
+                                                .stroke(
+                                                    LinearGradient(
+                                                        colors: [.purple.opacity(0.3), .blue.opacity(0.3)],
+                                                        startPoint: .topLeading,
+                                                        endPoint: .bottomTrailing
+                                                    ),
+                                                    lineWidth: 1
+                                                )
+                                        )
+                                )
                             )
                             .onAppear {
                                 print("⏳ Loading image for: \(song.name)")
@@ -375,7 +450,7 @@ struct SongCard: View {
                             }
                     @unknown default:
                         Rectangle()
-                            .fill(Color.gray.opacity(0.15))
+                            .fill(.ultraThinMaterial)
                     }
                 }
                 .task(id: song.imageURL) {
@@ -474,36 +549,75 @@ struct LoadingOverlay: View {
     var body: some View {
         if isLoading || isSendingLiked {
             ZStack {
-                Color.black.opacity(0.3)
-                    .ignoresSafeArea()
-                
-                VStack(spacing: 20) {
-                    ProgressView()
-                        .scaleEffect(1.5)
-                        .tint(.white)
-                    
-                    VStack(spacing: 8) {
-                        Text(isSendingLiked ? "Sending your feedback..." : "Discovering your perfect songs...")
-                            .font(.headline)
-                            .foregroundStyle(.white)
-                        
-                        Text(isSendingLiked ? "We're learning from your preferences" : "This may take a moment while we analyze your playlist")
-                            .font(.caption)
-                            .foregroundStyle(.white.opacity(0.8))
-                            .multilineTextAlignment(.center)
-                    }
-                }
-                .padding(32)
-                .background(
-                    RoundedRectangle(cornerRadius: 20)
-                        .fill(.ultraThinMaterial)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 20)
-                                .stroke(Palette.grad, lineWidth: 2)
-                        )
+                // Clean white background with subtle purple gradient
+                LinearGradient(
+                    colors: [.white, .purple.opacity(0.05)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
                 )
-                .padding(.horizontal, 40)
-                .shadow(radius: 20)
+                .ignoresSafeArea()
+                
+                VStack {
+                    Spacer()
+                    
+                    VStack(spacing: 24) {
+                        // Enhanced progress indicator with liquid glass effect
+                        ZStack {
+                            Circle()
+                                .fill(.ultraThinMaterial)
+                                .frame(width: 80, height: 80)
+                                .overlay(
+                                    Circle()
+                                        .stroke(
+                                            LinearGradient(
+                                                colors: [.purple.opacity(0.6), .blue.opacity(0.6)],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            ),
+                                            lineWidth: 3
+                                        )
+                                )
+                                .shadow(color: .purple.opacity(0.3), radius: 10, x: 0, y: 0)
+                            
+                            ProgressView()
+                                .scaleEffect(1.8)
+                                .tint(.purple)
+                        }
+                        
+                        VStack(spacing: 12) {
+                            Text(isSendingLiked ? "Sending your feedback..." : "Discovering new songs...")
+                                .font(.headline)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(.primary)
+                            
+                            Text(isSendingLiked ? "We're learning from your preferences" : "This may take a moment")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                                .lineLimit(2)
+                        }
+                    }
+                    .padding(40)
+                    .background(
+                        RoundedRectangle(cornerRadius: 24)
+                            .fill(.ultraThinMaterial)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 24)
+                                    .stroke(
+                                        LinearGradient(
+                                            colors: [.purple.opacity(0.4), .blue.opacity(0.4)],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        ),
+                                        lineWidth: 2
+                                    )
+                            )
+                            .shadow(color: .purple.opacity(0.2), radius: 20, x: 0, y: 10)
+                    )
+                    .padding(.horizontal, 40)
+                    
+                    Spacer()
+                }
             }
             .transition(.opacity)
             .animation(.easeInOut(duration: 0.3), value: isLoading || isSendingLiked)
@@ -535,16 +649,48 @@ struct SongSwipeDeck: View {
             }
 
             if let errorMessage = store.errorMessage {
-                VStack(spacing: 16) {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.largeTitle)
-                        .foregroundStyle(.orange)
-                    Text("Oops! Something went wrong")
-                        .font(.headline)
-                    Text(errorMessage)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
+                VStack(spacing: 20) {
+                    ZStack {
+                        Circle()
+                            .fill(.ultraThinMaterial)
+                            .frame(width: 80, height: 80)
+                            .overlay(
+                                Circle()
+                                    .stroke(
+                                        LinearGradient(
+                                            colors: [.red.opacity(0.4), .orange.opacity(0.4)],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        ),
+                                        lineWidth: 2
+                                    )
+                            )
+                            .shadow(color: .red.opacity(0.2), radius: 10, x: 0, y: 5)
+                        
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.system(size: 30))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [.red, .orange],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                    }
+                    
+                    VStack(spacing: 12) {
+                        Text("Oops! Something went wrong")
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.primary)
+                        
+                        Text(errorMessage)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(3)
+                    }
+                    
                     Button("Try Again") {
                         Task {
                             await store.loadFromBackend()
@@ -552,21 +698,87 @@ struct SongSwipeDeck: View {
                     }
                     .buttonStyle(GlassGradientButtonStyle())
                 }
-                .padding(24)
-                .background(RoundedRectangle(cornerRadius: 16).fill(.ultraThinMaterial))
+                .padding(32)
+                .background(
+                    RoundedRectangle(cornerRadius: 20)
+                        .fill(.ultraThinMaterial)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 20)
+                                .stroke(
+                                    LinearGradient(
+                                        colors: [.red.opacity(0.3), .orange.opacity(0.3)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    lineWidth: 1
+                                )
+                        )
+                        .shadow(color: .red.opacity(0.1), radius: 15, x: 0, y: 8)
+                )
+                .padding(.horizontal, 20)
                 .padding(.top, 200)
-                .shadow(radius: 10)
             } else if store.deck.isEmpty && !store.isLoading && !store.isSendingLiked {
-                VStack(spacing: 12) {
-                    Image(systemName: "music.note.list").font(.largeTitle)
-                    Text("You're all caught up!")
-                    Text("Pull to refresh or try a different playlist")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                VStack(spacing: 20) {
+                    ZStack {
+                        Circle()
+                            .fill(.ultraThinMaterial)
+                            .frame(width: 80, height: 80)
+                            .overlay(
+                                Circle()
+                                    .stroke(
+                                        LinearGradient(
+                                            colors: [.purple.opacity(0.4), .blue.opacity(0.4)],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        ),
+                                        lineWidth: 2
+                                    )
+                            )
+                            .shadow(color: .purple.opacity(0.2), radius: 10, x: 0, y: 5)
+                        
+                        Image(systemName: "music.note.list")
+                            .font(.system(size: 30))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [.purple, .blue],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                    }
+                    
+                    VStack(spacing: 12) {
+                        Text("You're all caught up!")
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.primary)
+                        
+                        Text("Pull to refresh or try a different playlist")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
+                    }
                 }
-                .background(RoundedRectangle(cornerRadius: 16).fill(Color(.systemBackground)))
+                .padding(32)
+                .background(
+                    RoundedRectangle(cornerRadius: 20)
+                        .fill(.ultraThinMaterial)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 20)
+                                .stroke(
+                                    LinearGradient(
+                                        colors: [.purple.opacity(0.2), .blue.opacity(0.2)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    lineWidth: 1
+                                )
+                        )
+                        .shadow(color: .purple.opacity(0.1), radius: 15, x: 0, y: 8)
+                )
+                .padding(.horizontal, 20)
                 .padding(.top, 200)
-                .shadow(radius: 10)
             }
             
             // Loading overlay
@@ -584,10 +796,11 @@ struct SongSwipeDeck: View {
             if !store.isLoading, let id = currentTopID {
                 SpotifyEmbedView(trackID: id)
                     .id(id)
-                    .frame(height: 340)
+                    .frame(height: 120)
                     .clipShape(RoundedRectangle(cornerRadius: 14))
                     .padding(.horizontal, 20)
-                    .padding(.bottom, 0)
+                    .padding(.bottom, 10)
+                    .padding(.top, 20)
             } else {
                 Spacer(minLength: 1)
             }
@@ -632,7 +845,7 @@ struct SongSwipeHome: View {
         NavigationStack {
             VStack(spacing: 0) {
                 // Title row
-                HStack(spacing: 8) {
+                HStack(spacing: -7) {
                     Text("Spinder")
                         .font(.system(size: 30, weight: .heavy, design: .rounded))
                         .gradientText()                    // apply gradient to the text only
@@ -640,7 +853,7 @@ struct SongSwipeHome: View {
                     Image("SpinderLogo")
                         .resizable()
                         .scaledToFit()
-                        .frame(width: 36, height: 36)      // smaller so it sits nicely with the text
+                        .frame(width: 65, height: 65)      // smaller so it sits nicely with the text
                 }
                 .padding(.top, 10)
                 .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 4)
@@ -686,19 +899,66 @@ struct LikedListView: View {
     var body: some View {
         NavigationView {
             if store.liked.isEmpty {
-                VStack(spacing: 20) {
-                    Image(systemName: "heart.slash")
-                        .font(.system(size: 60))
-                        .foregroundStyle(.secondary)
-                    Text("No liked songs yet")
-                        .font(.title2)
-                        .fontWeight(.medium)
-                    Text("Start swiping to discover music you love!")
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
+                VStack(spacing: 24) {
+                    ZStack {
+                        Circle()
+                            .fill(.ultraThinMaterial)
+                            .frame(width: 100, height: 100)
+                            .overlay(
+                                Circle()
+                                    .stroke(
+                                        LinearGradient(
+                                            colors: [.purple.opacity(0.4), .blue.opacity(0.4)],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        ),
+                                        lineWidth: 2
+                                    )
+                            )
+                            .shadow(color: .purple.opacity(0.2), radius: 10, x: 0, y: 5)
+                        
+                        Image(systemName: "heart.slash")
+                            .font(.system(size: 40))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [.purple, .blue],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                    }
+                    
+                    VStack(spacing: 12) {
+                        Text("No liked songs yet")
+                            .font(.title2)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.primary)
+                        
+                        Text("Start swiping to discover music you love!")
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
+                    }
                 }
                 .padding(40)
+                .background(
+                    RoundedRectangle(cornerRadius: 20)
+                        .fill(.ultraThinMaterial)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 20)
+                                .stroke(
+                                    LinearGradient(
+                                        colors: [.purple.opacity(0.2), .blue.opacity(0.2)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    lineWidth: 1
+                                )
+                        )
+                        .shadow(color: .purple.opacity(0.1), radius: 10, x: 0, y: 5)
+                )
+                .padding(.horizontal, 20)
                 .navigationTitle("Liked Songs")
             } else {
                 ScrollView {
@@ -726,36 +986,75 @@ struct LikedListView: View {
         .overlay {
             if isResetting {
                 ZStack {
-                    Color.black.opacity(0.8)
-                        .ignoresSafeArea()
-                    
-                    VStack(spacing: 20) {
-                        ProgressView()
-                            .scaleEffect(1.5)
-                            .tint(.white)
-                        
-                        VStack(spacing: 8) {
-                            Text("Starting Fresh...")
-                                .font(.headline)
-                                .foregroundStyle(.white)
-                            
-                            Text("Clearing data and loading new playlist")
-                                .font(.caption)
-                                .foregroundStyle(.white.opacity(0.8))
-                                .multilineTextAlignment(.center)
-                        }
-                    }
-                    .padding(32)
-                    .background(
-                        RoundedRectangle(cornerRadius: 20)
-                            .fill(.ultraThinMaterial)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 20)
-                                    .stroke(.blue, lineWidth: 2)
-                            )
+                    // Clean white background with purple gradient
+                    LinearGradient(
+                        colors: [.white, .purple.opacity(0.08)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
                     )
-                    .padding(.horizontal, 40)
-                    .shadow(radius: 20)
+                    .ignoresSafeArea()
+                    
+                    VStack {
+                        Spacer()
+                        
+                        VStack(spacing: 24) {
+                            // Enhanced reset progress indicator
+                            ZStack {
+                                Circle()
+                                    .fill(.ultraThinMaterial)
+                                    .frame(width: 80, height: 80)
+                                    .overlay(
+                                        Circle()
+                                            .stroke(
+                                                LinearGradient(
+                                                    colors: [.purple.opacity(0.7), .blue.opacity(0.7)],
+                                                    startPoint: .topLeading,
+                                                    endPoint: .bottomTrailing
+                                                ),
+                                                lineWidth: 3
+                                            )
+                                    )
+                                    .shadow(color: .purple.opacity(0.4), radius: 12, x: 0, y: 0)
+                                
+                                ProgressView()
+                                    .scaleEffect(1.8)
+                                    .tint(.purple)
+                            }
+                            
+                            VStack(spacing: 12) {
+                                Text("Starting Fresh...")
+                                    .font(.headline)
+                                    .fontWeight(.semibold)
+                                    .foregroundStyle(.primary)
+                                
+                                Text("Clearing data and loading new playlist")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.center)
+                                    .lineLimit(2)
+                            }
+                        }
+                        .padding(40)
+                        .background(
+                            RoundedRectangle(cornerRadius: 24)
+                                .fill(.ultraThinMaterial)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 24)
+                                        .stroke(
+                                            LinearGradient(
+                                                colors: [.purple.opacity(0.5), .blue.opacity(0.5)],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            ),
+                                            lineWidth: 2
+                                        )
+                                )
+                                .shadow(color: .purple.opacity(0.3), radius: 25, x: 0, y: 15)
+                        )
+                        .padding(.horizontal, 40)
+                        
+                        Spacer()
+                    }
                 }
                 .zIndex(9999) // Ensure it's on top of everything
                 .allowsHitTesting(true) // Allow interaction
@@ -977,7 +1276,7 @@ struct Network {
 @MainActor
 func fetchSongs(for playlistURL: String) async throws -> [Song] {
     print("🌐 Fetching songs for playlist: \(playlistURL)")
-    var comps = URLComponents(string: "http://127.0.0.1:5000/link/" + playlistURL)!
+    let comps = URLComponents(string: "http://127.0.0.1:5000/link/" + playlistURL)!
 
     var req = URLRequest(url: comps.url!)
     req.httpMethod = "GET"
