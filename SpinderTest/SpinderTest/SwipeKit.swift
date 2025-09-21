@@ -355,24 +355,56 @@ struct SongSwipeHome: View {
     }
 }
 
-
 struct LikedListView: View {
     let liked: [Song]
+
     var body: some View {
         List(liked) { s in
             HStack(spacing: 12) {
-                AsyncImage(url: s.artworkURL) { img in img.resizable().scaledToFill() } placeholder: { Color.gray.opacity(0.2) }
-                    .frame(width: 56, height: 56)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                AsyncImage(url: s.artworkURL) { img in
+                    img.resizable().scaledToFill()
+                } placeholder: { Color.gray.opacity(0.2) }
+                .frame(width: 56, height: 56)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+
                 VStack(alignment: .leading) {
                     Text(s.title).font(.headline)
-                    Text(s.artistDisplay).font(.subheadline).foregroundStyle(.secondary)
+                    Text(s.artistDisplay)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                 }
             }
         }
         .navigationTitle("Liked")
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    saveLikedToPlaylist()
+                } label: {
+                    Image(systemName: "square.and.arrow.down")
+                }
+                .accessibilityLabel("Save to Spotify Playlist")
+            }
+        }
+    }
+
+    private func saveLikedToPlaylist() {
+        let trackIDs = liked.compactMap { $0.spotifyID }
+        print("Saving these to playlist:", trackIDs)
+        // TODO!!!!: hook into backend/Spotify API to actually save
     }
 }
+func simpleGetUrlRequest(url: String)
+    {
+        let url = URL(string: url)!
+
+        let task = URLSession.shared.dataTask(with: url) {(data, response, error) in
+            guard let data = data else { return }
+            print("The response is : ",String(data: data, encoding: .utf8)!)
+            //print(NSString(data: data, encoding: String.Encoding.utf8.rawValue) as Any)
+        }
+        task.resume()
+    }
 #Preview {
     SongSwipeHome()
 }

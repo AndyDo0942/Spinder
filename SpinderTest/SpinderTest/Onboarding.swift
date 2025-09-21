@@ -100,6 +100,7 @@ struct PlaylistLinkOnboarding: View {
                     .keyboardType(.URL)
                     .textContentType(.URL)
                     .autocorrectionDisabled()
+                    .textSelection(.enabled) // ✅ allows copy/paste
                     .padding(.horizontal, 16).padding(.vertical, 14)
                     .background(
                         RoundedRectangle(cornerRadius: 14).fill(.ultraThinMaterial)
@@ -109,14 +110,19 @@ struct PlaylistLinkOnboarding: View {
 
                 if let error { Text(error).font(.footnote).foregroundStyle(.red) }
 
-                Button (action:{}){
-                    // For now, just dismiss and let Home fetc from backend
+                Button {
+                    simpleGetUrlRequest(url: "http://127.0.0.1:5000/link/" + input)
+                    // For now, just dismiss and let Home fetch from backend
+                    // For now, just dismiss and let Home fetch from backend
                     onImported([])
                     dismiss()
                 } label: {
-                    Text("Use This Playlist").bold().foregroundStyle(.black)
+                    Text("Use This Playlist")
+                        .bold()
+                        .foregroundStyle(.black)
                 }
                 .buttonStyle(GlassGradientButtonStyle())
+
 
                 Button("Skip for now") { dismiss() }.foregroundStyle(.secondary)
             }
