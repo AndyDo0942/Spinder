@@ -85,6 +85,8 @@ struct PlaylistLinkOnboarding: View {
     @State private var isLoading = false
     @State private var error: String?
     @Environment(\.dismiss) private var dismiss
+    @State private var responseText: String?
+    
     let onImported: ([Song]) -> Void
 
     var body: some View {
@@ -111,8 +113,12 @@ struct PlaylistLinkOnboarding: View {
                 if let error { Text(error).font(.footnote).foregroundStyle(.red) }
 
                 Button {
-                    print("http://127.0.0.1:5000/link/" + input)
-                    simpleGetUrlRequest(url: "http://127.0.0.1:5000/link/" + input)
+                    simpleGetUrlRequest(url: "http://127.0.0.1:5000/link/abc") { text in
+                            DispatchQueue.main.async {
+                                responseText = text
+                            }
+                        }
+
                     // For now, just dismiss and let Home fetch from backend
                     // For now, just dismiss and let Home fetch from backend
                     

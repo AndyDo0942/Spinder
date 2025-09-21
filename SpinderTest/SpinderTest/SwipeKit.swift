@@ -394,18 +394,31 @@ struct LikedListView: View {
         // TODO!!!!: hook into backend/Spotify API to actually save
     }
 }
-func simpleGetUrlRequest(url: String)
-    {
-        let url = URL(string: url)!
-
-        let task = URLSession.shared.dataTask(with: url) {(data, response, error) in
-            guard let data = data else { return }
-            print("The response is : ",String(data: data, encoding: .utf8)!)
-            //print(NSString(data: data, encoding: String.Encoding.utf8.rawValue) as Any)
-        }
-        task.resume()
-        print(task)
+func simpleGetUrlRequest(url: String, completion: @escaping (String?) -> Void) {
+    guard let url = URL(string: url) else {
+        print("❌ Invalid URL string:", url)
+        completion(nil)
+        return
     }
+
+    URLSession.shared.dataTask(with: url) { data, response, error in
+        if let error = error {
+            print("❌ Request failed:", error.localizedDescription)
+            completion(nil)
+            return
+        }
+
+        guard let data = data,
+              let text = String(data: data, encoding: .utf8) else {
+            completion(nil)
+            return
+        }
+
+        completion(text)  // return to caller
+    }
+    .resume()
+}
+
 #Preview {
     SongSwipeHome()
 }
