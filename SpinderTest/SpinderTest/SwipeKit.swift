@@ -213,55 +213,75 @@ import WebKit
 
 struct SpotifyEmbedView: UIViewRepresentable {
     let trackID: String
+    /// 88–100 looks best. 96 is a good default.
+    var height: CGFloat = 96
 
     func makeUIView(context: Context) -> WKWebView {
-        let wv = WKWebView()
+        let cfg = WKWebViewConfiguration()
+        cfg.allowsInlineMediaPlayback = true
+        let wv = WKWebView(frame: .zero, configuration: cfg)
         wv.isOpaque = false
         wv.backgroundColor = .clear
         wv.scrollView.isScrollEnabled = false
-
-        wv.loadHTMLString(makeHTML(for: trackID), baseURL: nil)
+        wv.scrollView.bounces = false
+        wv.loadHTMLString(makeHTML(for: trackID, height: Int(height)), baseURL: nil)
         return wv
     }
 
     func updateUIView(_ uiView: WKWebView, context: Context) {
-        uiView.loadHTMLString(makeHTML(for: trackID), baseURL: nil)
+        uiView.loadHTMLString(makeHTML(for: trackID, height: Int(height)), baseURL: nil)
     }
 
-    private func makeHTML(for trackID: String) -> String {
+    private func makeHTML(for trackID: String, height: Int) -> String {
         """
-        <!DOCTYPE html>
+        <!doctype html>
         <html>
         <head>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <script src="https://open.spotify.com/embed/iframe-api/v1" async></script>
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <style>
+            html,body{margin:0;padding:0;background:transparent;overflow:hidden;}
+            /* Outer wrapper defines the visual size + rounded corners */
+            .wrap{
+              width:100%;
+              height:\(height)px;
+              border-radius:14px;
+              overflow:hidden;
+              background:transparent;
+              position:relative;
+            }
+            /* Ensure the embed fills the wrapper with no extra margins */
+            iframe, #embed-iframe {
+              position:absolute;
+              inset:0;
+              width:100%;
+              height:100%;
+              border:0;
+            }
+          </style>
+          <script src="https://open.spotify.com/embed/iframe-api/v1" async></script>
         </head>
-        <body style="margin:0;background:transparent;">
+        <body>
+          <div class="wrap">
             <div id="embed-iframe"></div>
-            <script>
-                window.onSpotifyIframeApiReady = (IFrameAPI) => {
-                    const element = document.getElementById('embed-iframe');
-                    const options = {
-                        uri: 'spotify:track:\(trackID)'
-                    };
-                    const callback = (EmbedController) => {
-                        // Try autoplay with mute workaround
-                        EmbedController.setVolume(0); // start muted
-                        EmbedController.play();
-
-                        // Unmute after a short delay (500ms)
-                        setTimeout(() => {
-                            EmbedController.setVolume(1);
-                        }, 500);
-                    };
-                    IFrameAPI.createController(element, options, callback);
-                };
-            </script>
+          </div>
+          <script>
+            window.onSpotifyIframeApiReady = (IFrameAPI) => {
+              const el = document.getElementById('embed-iframe');
+              const options = {
+                uri: 'spotify:track:\(trackID)',
+                theme: 'dark'
+              };
+              IFrameAPI.createController(el, options, (controller) => {
+                // Avoid autoplay tricks—causes layout jank and won't work on iOS.
+              });
+            };
+          </script>
         </body>
         </html>
         """
     }
 }
+
 
 
 
@@ -481,10 +501,10 @@ struct SongSwipeDeck: View {
             if let id = currentTopID {
                 SpotifyEmbedView(trackID: id)
                     .id(id)
-                    .frame(height: 340)
+                    .frame(height: 120)
                     .clipShape(RoundedRectangle(cornerRadius: 14))
                     .padding(.horizontal, 20)
-                    .padding(.bottom, 0)
+                    .padding(.bottom, 10)
             } else {
                 Spacer(minLength: 1)
             }
