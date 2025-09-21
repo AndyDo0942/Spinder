@@ -3,24 +3,20 @@ import AVFoundation
 import WebKit
 import Combine
 
-// MARK: - Model
-struct Song: Identifiable, Equatable {
-    let id = UUID()
-    let title: String
-    let artists: [String]
-    let artworkURL: URL?
-    let previewURL: URL?           // unused for Spotify embed; keep for future Apple Music
-    let spotifyID: String?         // used for the 30s embed
+import Foundation
 
-    var artistDisplay: String { artists.joined(separator: ", ") }
-}
-
-// MARK: - Backend DTO + Client
-struct BackendSongDTO: Decodable {
+struct Song: Identifiable, Codable, Hashable {
+    let id: String       // we’ll map spotify_id here
     let name: String
     let artists: [String]
-    let spotify_id: String
-    let imageurl: String
+    let imageURL: String
+
+    enum CodingKeys: String, CodingKey {
+        case id = "spotify_id"
+        case name
+        case artists
+        case imageURL = "image_url"
+    }
 }
 
 enum BackendClient {
@@ -308,54 +304,71 @@ struct SongSwipeDeck: View {
 
 
 // MARK: - Demo
-enum DemoData {
+
+
+struct DemoData {
     static let songs: [Song] = [
-        Song(title: "Midnight City", artists: ["M83"], artworkURL: URL(string: "https://picsum.photos/seed/a/600/600"), previewURL: nil, spotifyID: "1Ukxccao1BlWrPhYkcXbwZ"),
-        Song(title: "Blinding Lights", artists: ["The Weeknd"], artworkURL: URL(string: "https://picsum.photos/seed/b/600/600"), previewURL: nil, spotifyID: "5meVa5klVlJalupZTvv5XX"),
-        Song(title: "Levitating", artists: ["Dua Lipa"], artworkURL: URL(string: "https://picsum.photos/seed/c/600/600"), previewURL: nil, spotifyID: "5meVa5klVlJalupZTvv5XX")
+        Song(
+            id: "0VjIjW4GlUZAMYd2vXMi3b",
+            name: "Blinding Lights",
+            artists: ["The Weeknd"],
+            imageURL: "https://i.scdn.co/image/ab67616d0000b273b8f7d4e8c58f21a8b4c9a46d"
+        ),
+        Song(
+            id: "7ouMYWpwJ422jRcDASZB7P",
+            name: "Levitating",
+            artists: ["Dua Lipa"],
+            imageURL: "https://i.scdn.co/image/ab67616d0000b2736f8a62e6a4c02187c9f2c1e1"
+        ),
+        Song(
+            id: "4uLU6hMCjMI75M1A2tKUQC",
+            name: "Never Gonna Give You Up",
+            artists: ["Rick Astley"],
+            imageURL: "https://i.scdn.co/image/ab67616d0000b273b664f645dd5bb0d9f2f1f3a0"
+        )
     ]
 }
 
-@State private var songs: [Song] = []
-
 // MARK: - Home
 struct SongSwipeHome: View {
-    @StateObject private var store = SwipeStore(deck: songs)
+    // Start with an empty deck (or use DemoData.songs if you want placeholders)
+    @StateObject private var store = SwipeStore(deck: DemoData.songs) // or DemoData.songs
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Custom Gradient Title
-                HStack(spacing: -5) {
+                // Title row
+                HStack(spacing: 8) {
                     Text("Spinder")
                         .font(.system(size: 30, weight: .heavy, design: .rounded))
-                        .gradientText()
+                        .gradientText()                    // apply gradient to the text only
 
                     Image("SpinderLogo")
                         .resizable()
                         .scaledToFit()
-                        .frame(width: 65, height: 65) // adjust to balance text
+                        .frame(width: 36, height: 36)      // smaller so it sits nicely with the text
                 }
-                    .font(.system(size: 36, weight: .heavy, design: .rounded))
-                    .gradientText() // ✅ uses the extension that applies Palette.grad
-                    .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 4)
-                    .padding(.top, 10)
+                .padding(.top, 10)
+                .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 4)
 
                 SongSwipeDeck(store: store)
-                    .padding(.top,10)
-                //check this code
+                    .padding(.top, 10)
             }
             .toolbar {
                 NavigationLink {
                     LikedListView(liked: store.liked)
-                } label: { Image(systemName: "heart") }
+                } label: {
+                    Image(systemName: "heart")
+                }
             }
         }
         .task {
-            await store.loadFromBackend()   // pulls JSON from Flask when Home appears
+            // Load from your Flask backend once the view appears
+            await store.loadFromBackend()
         }
     }
 }
+
 
 struct LikedListView: View {
     let liked: [Song]
