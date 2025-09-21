@@ -274,6 +274,8 @@ struct SongSwipeHome: View {
                     .padding(.top, 10)
 
                 SongSwipeDeck(store: store)
+                    .padding(.top,200)
+                //check this code
             }
             .toolbar {
                 NavigationLink {
