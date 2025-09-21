@@ -111,9 +111,11 @@ struct PlaylistLinkOnboarding: View {
                 if let error { Text(error).font(.footnote).foregroundStyle(.red) }
 
                 Button {
+                    print("http://127.0.0.1:5000/link/" + input)
                     simpleGetUrlRequest(url: "http://127.0.0.1:5000/link/" + input)
                     // For now, just dismiss and let Home fetch from backend
                     // For now, just dismiss and let Home fetch from backend
+                    
                     onImported([])
                     dismiss()
                 } label: {

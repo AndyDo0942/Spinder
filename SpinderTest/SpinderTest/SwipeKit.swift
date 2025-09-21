@@ -404,6 +404,7 @@ func simpleGetUrlRequest(url: String)
             //print(NSString(data: data, encoding: String.Encoding.utf8.rawValue) as Any)
         }
         task.resume()
+        print(task)
     }
 #Preview {
     SongSwipeHome()
