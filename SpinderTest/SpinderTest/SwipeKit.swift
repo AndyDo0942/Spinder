@@ -91,6 +91,12 @@ final class PreviewPlayer: ObservableObject {
 }
 
 // MARK: - Spotify 30s Embed
+import SwiftUI
+import WebKit
+
+import SwiftUI
+import WebKit
+
 struct SpotifyEmbedView: UIViewRepresentable {
     let trackID: String
 
@@ -99,18 +105,51 @@ struct SpotifyEmbedView: UIViewRepresentable {
         wv.isOpaque = false
         wv.backgroundColor = .clear
         wv.scrollView.isScrollEnabled = false
-        let url = URL(string: "https://open.spotify.com/embed/track/\(trackID)?utm_source=generator")!
-        wv.load(URLRequest(url: url))
+
+        wv.loadHTMLString(makeHTML(for: trackID), baseURL: nil)
         return wv
     }
 
     func updateUIView(_ uiView: WKWebView, context: Context) {
-        let url = URL(string: "https://open.spotify.com/embed/track/\(trackID)?utm_source=generator")!
-        if uiView.url != url {
-            uiView.load(URLRequest(url: url))
-        }
+        uiView.loadHTMLString(makeHTML(for: trackID), baseURL: nil)
+    }
+
+    private func makeHTML(for trackID: String) -> String {
+        """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <script src="https://open.spotify.com/embed/iframe-api/v1" async></script>
+        </head>
+        <body style="margin:0;background:transparent;">
+            <div id="embed-iframe"></div>
+            <script>
+                window.onSpotifyIframeApiReady = (IFrameAPI) => {
+                    const element = document.getElementById('embed-iframe');
+                    const options = {
+                        uri: 'spotify:track:\(trackID)'
+                    };
+                    const callback = (EmbedController) => {
+                        // Try autoplay with mute workaround
+                        EmbedController.setVolume(0); // start muted
+                        EmbedController.play();
+
+                        // Unmute after a short delay (500ms)
+                        setTimeout(() => {
+                            EmbedController.setVolume(1);
+                        }, 500);
+                    };
+                    IFrameAPI.createController(element, options, callback);
+                };
+            </script>
+        </body>
+        </html>
+        """
     }
 }
+
+
 
 
 // MARK: - Card
@@ -237,10 +276,10 @@ struct SongSwipeDeck: View {
                 VStack(spacing: 12) {
                     Image(systemName: "music.note.list").font(.largeTitle)
                     Text("You're all caught up!")
-                    ProgressView().padding(.top, 4)
+                    ProgressView().padding(4)
                 }
-                .padding()
                 .background(RoundedRectangle(cornerRadius: 16).fill(Color(.systemBackground)))
+                .padding(.top, 200)
                 .shadow(radius: 10)
             }
         }
@@ -256,10 +295,10 @@ struct SongSwipeDeck: View {
             if let id = currentTopID {
                 SpotifyEmbedView(trackID: id)
                     .id(id)
-                    .frame(height: 84)
+                    .frame(height: 340)
                     .clipShape(RoundedRectangle(cornerRadius: 14))
                     .padding(.horizontal, 20)
-                    .padding(.bottom, 12)
+                    .padding(.bottom, 0)
             } else {
                 Spacer(minLength: 1)
             }
@@ -272,7 +311,7 @@ struct SongSwipeDeck: View {
 enum DemoData {
     static let songs: [Song] = [
         Song(title: "Midnight City", artists: ["M83"], artworkURL: URL(string: "https://picsum.photos/seed/a/600/600"), previewURL: nil, spotifyID: "1Ukxccao1BlWrPhYkcXbwZ"),
-        Song(title: "Blinding Lights", artists: ["The Weeknd"], artworkURL: URL(string: "https://picsum.photos/seed/b/600/600"), previewURL: nil, spotifyID: "1Ukxccao1BlWrPhYkcXbwZ"),
+        Song(title: "Blinding Lights", artists: ["The Weeknd"], artworkURL: URL(string: "https://picsum.photos/seed/b/600/600"), previewURL: nil, spotifyID: "5meVa5klVlJalupZTvv5XX"),
         Song(title: "Levitating", artists: ["Dua Lipa"], artworkURL: URL(string: "https://picsum.photos/seed/c/600/600"), previewURL: nil, spotifyID: "5meVa5klVlJalupZTvv5XX")
     ]
 }
@@ -292,7 +331,7 @@ struct SongSwipeHome: View {
                     .padding(.top, 10)
 
                 SongSwipeDeck(store: store)
-                    .padding(.top,200)
+                    .padding(.top,10)
                 //check this code
             }
             .toolbar {
