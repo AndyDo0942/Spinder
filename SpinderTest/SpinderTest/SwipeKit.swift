@@ -47,7 +47,16 @@ struct Song: Identifiable, Codable, Hashable {
     // Computed properties for compatibility with existing UI code
     var title: String { name }
     var artistDisplay: String { artists.joined(separator: ", ") }
-    var artworkURL: URL? { URL(string: imageURL) }
+    var artworkURL: URL? {
+        print("🔍 Processing imageURL: '\(imageURL)'")
+        let url = URL(string: imageURL)
+        if url == nil {
+            print("⚠️ Invalid imageURL: '\(imageURL)'")
+        } else {
+            print("✅ Valid imageURL: \(url!.absoluteString)")
+        }
+        return url
+    }
     var spotifyID: String { id }
 
     enum CodingKeys: String, CodingKey {
@@ -133,6 +142,15 @@ final class SwipeStore: ObservableObject {
         do {
             let songs = try await fetchSongs(for: currentPlaylistID)
             print("🔄 Loaded \(songs.count) new songs from backend")
+            
+            // Debug: Check image URLs
+            for (index, song) in songs.prefix(3).enumerated() {
+                print("🎵 Song \(index + 1): \(song.name)")
+                print("   Image URL: '\(song.imageURL)'")
+                print("   Artwork URL: \(song.artworkURL?.absoluteString ?? "nil")")
+                print("   Spotify ID: \(song.spotifyID)")
+            }
+            
             reset(with: songs)
         } catch {
             print("Fetch error:", error)
@@ -170,8 +188,9 @@ final class SwipeStore: ObservableObject {
             
             // Update the deck with new recommendations
             if !newSongs.isEmpty {
-                deck = newSongs
-                print("🔄 Updated deck with \(newSongs.count) new songs")
+                await MainActor.run {
+                    deck = newSongs
+                }
             }
         } catch {
             print("❌ Failed to send liked songs:", error)
@@ -184,6 +203,17 @@ final class SwipeStore: ObservableObject {
     
     func updatePlaylistID(_ playlistID: String) {
         currentPlaylistID = playlistID
+    }
+    
+    func resetEverything() {
+        // Clear all local data
+        deck = []
+        liked.removeAll()
+        passed.removeAll()
+        sentSongIDs.removeAll()
+        errorMessage = nil
+        isLoading = false
+        isSendingLiked = false
     }
 }
 
@@ -279,11 +309,80 @@ struct SongCard: View {
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .bottomLeading) {
-                AsyncImage(url: song.artworkURL) { img in
-                    img.resizable().scaledToFill()
-                } placeholder: {
-                    Rectangle().fill(Color.gray.opacity(0.15))
+                AsyncImage(
+                    url: song.artworkURL,
+                    transaction: Transaction(animation: .easeInOut(duration: 0.5))
+                ) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                            .transition(.opacity)
+                            .onAppear {
+                                print("✅ Image loaded successfully for: \(song.name)")
+                                print("   URL: \(song.imageURL)")
+                            }
+                    case .failure(let error):
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.15))
+                            .overlay(
+                                VStack {
+                                    Image(systemName: "photo")
+                                        .font(.largeTitle)
+                                        .foregroundColor(.gray)
+                                    Text("Image failed to load")
+                                        .font(.caption)
+                                        .foregroundColor(.gray)
+                                }
+                            )
+                            .onAppear {
+                                print("❌ Image failed for: \(song.name)")
+                                print("   Error: \(error)")
+                                print("   URL was: '\(song.imageURL)'")
+                                print("   Artwork URL: \(song.artworkURL?.absoluteString ?? "nil")")
+                            }
+                    case .empty:
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.15))
+                            .overlay(
+                                VStack {
+                                    ProgressView()
+                                        .scaleEffect(0.8)
+                                    Text("Loading...")
+                                        .font(.caption)
+                                        .foregroundColor(.gray)
+                                }
+                            )
+                            .onAppear {
+                                print("⏳ Loading image for: \(song.name)")
+                                print("   URL: '\(song.imageURL)'")
+                                print("   Artwork URL: \(song.artworkURL?.absoluteString ?? "nil")")
+                                
+                                // Test if the URL is actually accessible
+                                if let url = song.artworkURL {
+                                    Task {
+                                        do {
+                                            let (_, response) = try await URLSession.shared.data(from: url)
+                                            if let httpResponse = response as? HTTPURLResponse {
+                                                print("🌐 Image URL response: \(httpResponse.statusCode)")
+                                            }
+                                        } catch {
+                                            print("❌ Image URL test failed: \(error)")
+                                        }
+                                    }
+                                }
+                            }
+                    @unknown default:
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.15))
+                    }
                 }
+                .task(id: song.imageURL) {
+                    // Force reload when image URL changes
+                    print("🔄 AsyncImage task triggered for: \(song.name)")
+                }
+                .id("image-\(song.id)-\(song.imageURL)-\(Date().timeIntervalSince1970)") // Force complete re-render
                 .frame(width: geo.size.width, height: geo.size.height)
                 .clipped()
 
@@ -420,15 +519,19 @@ struct SongSwipeDeck: View {
 
     var body: some View {
         ZStack {
-            ForEach(Array(store.deck.enumerated()), id: \.element.id) { idx, song in
-                SongCard(song: song) { like in
-                    withAnimation { store.swipe(song, like: like) }
+            // Only show cards when not loading
+            if !store.isLoading {
+                ForEach(Array(store.deck.enumerated()), id: \.element.id) { idx, song in
+                    SongCard(song: song) { like in
+                        withAnimation { store.swipe(song, like: like) }
+                    }
+                    .padding(20)
+                    // make sure top card draws on TOP visually (optional but nice)
+                    .zIndex(Double(store.deck.count - idx))
+                    .scaleEffect(1 - (CGFloat(idx) * 0.02))
+                    .offset(y: CGFloat(idx) * 8)
+                    .id("\(song.id)-\(song.imageURL)") // Force re-render when image URL changes
                 }
-                .padding(20)
-                // make sure top card draws on TOP visually (optional but nice)
-                .zIndex(Double(store.deck.count - idx))
-                .scaleEffect(1 - (CGFloat(idx) * 0.02))
-                .offset(y: CGFloat(idx) * 8)
             }
 
             if let errorMessage = store.errorMessage {
@@ -476,9 +579,9 @@ struct SongSwipeDeck: View {
         .onChange(of: store.deck.first?.id) { _, _ in
             currentTopID = store.deck.first?.spotifyID
         }
-        // Embed for the top song
+        // Embed for the top song (only show when not loading)
         .safeAreaInset(edge: .bottom) {
-            if let id = currentTopID {
+            if !store.isLoading, let id = currentTopID {
                 SpotifyEmbedView(trackID: id)
                     .id(id)
                     .frame(height: 340)
@@ -547,7 +650,7 @@ struct SongSwipeHome: View {
             }
             .toolbar {
                 NavigationLink {
-                    LikedListView(liked: store.liked)
+                    LikedListView(store: store)
                 } label: {
                     Image(systemName: "heart")
                 }
@@ -572,12 +675,17 @@ struct SongSwipeHome: View {
 
 
 struct LikedListView: View {
-    let liked: [Song]
+    @ObservedObject var store: SwipeStore
     @State private var showingEmptyState = false
+    @State private var showingResetAlert = false
+    @State private var showingPlaylistInput = false
+    @State private var newPlaylistID = ""
+    @State private var isResetting = false
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationView {
-            if liked.isEmpty {
+            if store.liked.isEmpty {
                 VStack(spacing: 20) {
                     Image(systemName: "heart.slash")
                         .font(.system(size: 60))
@@ -595,22 +703,79 @@ struct LikedListView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 12) {
-                        ForEach(liked) { song in
+                        ForEach(store.liked) { song in
                             LikedSongRow(song: song)
                         }
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
                 }
-                .navigationTitle("Liked Songs (\(liked.count))")
+                .navigationTitle("Liked Songs (\(store.liked.count))")
                 .toolbar {
                     ToolbarItem(placement: .navigationBarTrailing) {
                         Button {
-                            saveLikedToPlaylist()
+                            showingResetAlert = true
                         } label: {
-                            Image(systemName: "square.and.arrow.down")
+                            Image(systemName: "arrow.clockwise")
                         }
-                        .accessibilityLabel("Save to Spotify Playlist")
+                        .accessibilityLabel("Reset and Start Over")
+                    }
+                }
+            }
+        }
+        .overlay {
+            if isResetting {
+                ZStack {
+                    Color.black.opacity(0.8)
+                        .ignoresSafeArea()
+                    
+                    VStack(spacing: 20) {
+                        ProgressView()
+                            .scaleEffect(1.5)
+                            .tint(.white)
+                        
+                        VStack(spacing: 8) {
+                            Text("Starting Fresh...")
+                                .font(.headline)
+                                .foregroundStyle(.white)
+                            
+                            Text("Clearing data and loading new playlist")
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.8))
+                                .multilineTextAlignment(.center)
+                        }
+                    }
+                    .padding(32)
+                    .background(
+                        RoundedRectangle(cornerRadius: 20)
+                            .fill(.ultraThinMaterial)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 20)
+                                    .stroke(.blue, lineWidth: 2)
+                            )
+                    )
+                    .padding(.horizontal, 40)
+                    .shadow(radius: 20)
+                }
+                .zIndex(9999) // Ensure it's on top of everything
+                .allowsHitTesting(true) // Allow interaction
+            }
+        }
+        .alert("Reset Everything?", isPresented: $showingResetAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Reset", role: .destructive) {
+                showingPlaylistInput = true
+            }
+        } message: {
+            Text("This will clear all your liked songs and start fresh with a new playlist. This action cannot be undone.")
+        }
+        .sheet(isPresented: $showingPlaylistInput) {
+            if !isResetting {
+                PlaylistInputSheet(newPlaylistID: $newPlaylistID) { playlistID in
+                    if let playlistID = playlistID {
+                        Task {
+                            await performReset(with: playlistID)
+                        }
                     }
                 }
             }
@@ -618,9 +783,110 @@ struct LikedListView: View {
     }
 
     private func saveLikedToPlaylist() {
-        let trackIDs = liked.compactMap { $0.spotifyID }
+        let trackIDs = store.liked.compactMap { $0.spotifyID }
         print("Saving these to playlist:", trackIDs)
         // TODO!!!!: hook into backend/Spotify API to actually save
+    }
+    
+    @MainActor
+    private func performReset(with playlistID: String) async {
+        // Dismiss the sheet first
+        showingPlaylistInput = false
+        
+        // Small delay to ensure sheet is dismissed
+        try? await Task.sleep(nanoseconds: 300_000_000) // 0.3 seconds
+        
+        // Show loading screen
+        isResetting = true
+        
+        do {
+            // Update playlist ID in UserDefaults
+            UserDefaults.standard.set(playlistID, forKey: "currentPlaylistID")
+            
+            // Reset local state
+            store.resetEverything()
+            store.updatePlaylistID(playlistID)
+            
+            // Use the GET endpoint to load new data (this will work perfectly)
+            await store.loadFromBackend()
+            
+            // Dismiss the liked songs view
+            dismiss()
+        } catch {
+            // Handle error if needed
+        }
+        
+        isResetting = false
+    }
+}
+
+struct PlaylistInputSheet: View {
+    @Binding var newPlaylistID: String
+    let onComplete: (String?) -> Void
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 24) {
+                VStack(spacing: 16) {
+                    Image(systemName: "music.note.list")
+                        .font(.system(size: 60))
+                        .foregroundStyle(.blue)
+                    
+                    Text("Enter New Playlist")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    
+                    Text("Paste a Spotify playlist URL or ID to start fresh")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.top, 40)
+                
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Playlist URL or ID")
+                        .font(.headline)
+                    
+                    TextField("https://open.spotify.com/playlist/...", text: $newPlaylistID)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .autocapitalization(.none)
+                        .disableAutocorrection(true)
+                }
+                
+                Spacer()
+                
+                VStack(spacing: 12) {
+                    Button {
+                        if let playlistID = extractPlaylistID(from: newPlaylistID) {
+                            onComplete(playlistID)
+                        } else {
+                            // Show error or handle invalid input
+                        }
+                    } label: {
+                        Text("Start Fresh")
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(.blue)
+                            )
+                    }
+                    .disabled(newPlaylistID.isEmpty)
+                    
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                    .foregroundStyle(.secondary)
+                }
+                .padding(.bottom, 20)
+            }
+            .padding(.horizontal, 24)
+            .navigationTitle("Reset Playlist")
+            .navigationBarTitleDisplayMode(.inline)
+        }
     }
 }
 
@@ -698,6 +964,14 @@ struct Network {
         cfg.waitsForConnectivity = true         // cellular / wifi recoveries
         return URLSession(configuration: cfg)
     }()
+    
+    static let imageSession: URLSession = {
+        let cfg = URLSessionConfiguration.default
+        cfg.timeoutIntervalForRequest = 30      // 30 seconds for images
+        cfg.timeoutIntervalForResource = 60     // 1 minute total for images
+        cfg.waitsForConnectivity = true
+        return URLSession(configuration: cfg)
+    }()
 }
 
 @MainActor
@@ -739,6 +1013,25 @@ func fetchSongs(for playlistURL: String) async throws -> [Song] {
 }
 
 @MainActor
+func clearBackendDatabase() async throws {
+    let url = URL(string: "http://127.0.0.1:5000/clear")!
+    var req = URLRequest(url: url)
+    req.httpMethod = "POST"
+    req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    req.setValue("Spinder-iOS/1.0", forHTTPHeaderField: "User-Agent")
+    
+    let (_, resp) = try await Network.shared.data(for: req)
+    guard let http = resp as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+        let statusCode = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        throw URLError(.badServerResponse, userInfo: [
+            NSLocalizedDescriptionKey: "Failed to clear database. Status: \(statusCode)"
+        ])
+    }
+    
+    print("✅ Successfully cleared backend database")
+}
+
+@MainActor
 func postLikedSongsAndGetRecommendations(_ likedSongs: [Song]) async throws -> [Song] {
     let url = URL(string: "http://127.0.0.1:5000/songids")!
     var req = URLRequest(url: url)
@@ -777,20 +1070,20 @@ func postLikedSongsAndGetRecommendations(_ likedSongs: [Song]) async throws -> [
         ])
     }
     
-    // Debug: Print raw response
-    if let jsonString = String(data: data, encoding: .utf8) {
-        print("📥 Raw response (first 500 chars): \(String(jsonString.prefix(500)))")
-    }
-    
     // Decode the new recommendations
     let decoder = JSONDecoder()
     do {
         let songs = try decoder.decode([Song].self, from: data)
-        print("✅ Successfully decoded \(songs.count) new recommendations")
+        
+        // Debug: Check first few songs for image URLs
+        for (index, song) in songs.prefix(3).enumerated() {
+            print("🎵 Song \(index + 1): \(song.name)")
+            print("   Image URL: \(song.imageURL)")
+            print("   Artwork URL: \(song.artworkURL?.absoluteString ?? "nil")")
+        }
+        
         return songs
     } catch {
-        print("❌ Decoding error: \(error)")
-        print("❌ Error details: \(error.localizedDescription)")
         throw error
     }
 }

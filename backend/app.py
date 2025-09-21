@@ -212,20 +212,26 @@ def get_album_art(spotify_id: str, size: int = 640):
     Returns the album art URL for a Spotify track ID.
     size can be 640, 300, or 64 (the sizes Spotify gives).
     """
-    url = f"https://api.spotify.com/v1/tracks/{spotify_id}"
-    headers = {"Authorization": f"Bearer {access_token}"}
+    try:
+        url = f"https://api.spotify.com/v1/tracks/{spotify_id}"
+        headers = {"Authorization": f"Bearer {access_token}"}
 
-    resp = requests.get(url, headers=headers)
-    resp.raise_for_status()
-    track = resp.json()
+        resp = requests.get(url, headers=headers, timeout=10)
+        resp.raise_for_status()
+        track = resp.json()
 
-    images = track["album"]["images"]
-    # Find image with requested size or just return the largest
-    for img in images:
-        if img["height"] == size:
-            return img["url"]
-    # If requested size not found, return the first image
-    return images[0]["url"]
+        images = track["album"]["images"]
+        if not images:
+            return "https://via.placeholder.com/300x300/1DB954/FFFFFF?text=Music"
+        
+        # Find image with requested size or just return the largest
+        for img in images:
+            if img["height"] == size:
+                return img["url"]
+        # If requested size not found, return the first image
+        return images[0]["url"]
+    except Exception as e:
+        return "https://via.placeholder.com/300x300/1DB954/FFFFFF?text=Music"
 
 
 def parse_markdown_json(raw: str):
@@ -256,7 +262,7 @@ def getRecommendations(spotify_ids: list, names: list, artists: list):
 
     geminiJSON = create_gemini_json()
     prompt = f"""SYSTEM:
-You are a music recommendation assistant. Output ONLY a JSON list (array) of EXACTLY 30 objects.
+You are a music recommendation assistant. Output ONLY a JSON list (array) of EXACTLY 10 objects.
 Each object MUST have exactly these keys with these types:
 "name": string (track title)
 "artist": array of strings (list of artist names; use a list even if there is only one artist)
@@ -264,7 +270,7 @@ No other text, no markdown, no extra keys.
 
 INSTRUCTIONS:
 Input is an array of seed songs with audio features and artist names.
-Recommend 30 DISTINCT tracks that are similar to the overall seed profile.
+Recommend 10 DISTINCT tracks that are similar to the overall seed profile.
 You MUST infer likely genres of the seeds from your knowledge of the tracks/artists and use those inferred genres when selecting recommendations.
 Do NOT return any seed tracks or those specifically disallowed. In other words DO NOT recommend any songs that are already mentioned in the following JSONS or that you have already mentioned.
 Diversity: cap at 2 tracks involving the same artist name (across any position in the artist list).
@@ -286,18 +292,29 @@ OUTPUT SHAPE EXAMPLE (structure only):
   {{"name": "Track Title 2", "artist": ["Artist A", "Artist B"]}},
   ...
 ]
-Return ONLY the JSON array (30 items)."""
+Return ONLY the JSON array (10 items)."""
 
     print(prompt)
     recommendationIDs = parse_markdown_json(geminiCall(prompt))
 
-    for index, recommendation in enumerate(recommendationIDs):
+    # Process recommendations and add Spotify data
+    processed_recommendations = []
+    for recommendation in recommendationIDs:
         spotifyID = get_spotify_id(recommendation["name"], ",".join(recommendation["artist"]))
-        if spotifyID == None:
-            recommendationIDs.pop(index)
-            continue
-        recommendationIDs[index]["spotify_id"] = spotifyID
-        recommendationIDs[index]["image_url"] = get_album_art(spotifyID)
+        if spotifyID is not None:
+            image_url = get_album_art(spotifyID)
+            processed_recommendation = {
+                "name": recommendation["name"],
+                "artist": recommendation["artist"],
+                "spotify_id": spotifyID,
+                "image_url": image_url
+            }
+            processed_recommendations.append(processed_recommendation)
+        else:
+            pass
+    
+    # Update the original list
+    recommendationIDs = processed_recommendations
 
     store_gemini_recommendations(recommendationIDs)
     return recommendationIDs
@@ -378,4 +395,10 @@ def moreRecs():
     spotifyIDs = request.get_json()
     info = getSpotifyTrackInfo(spotifyIDs)
     return getRecommendations(spotifyIDs, info["names"], info["artists"]), 200
+
+@app.route("/clear", methods=['POST'])
+def clear_database():
+    from db import clear_all_data
+    clear_all_data()
+    return {"message": "Database cleared successfully"}, 200
 
