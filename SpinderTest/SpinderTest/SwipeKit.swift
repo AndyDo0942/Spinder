@@ -316,9 +316,11 @@ enum DemoData {
     ]
 }
 
+@State private var songs: [Song] = []
+
 // MARK: - Home
 struct SongSwipeHome: View {
-    @StateObject private var store = SwipeStore(deck: DemoData.songs)
+    @StateObject private var store = SwipeStore(deck: songs)
 
     var body: some View {
         NavigationStack {
@@ -430,22 +432,25 @@ struct Network {
 }
 
 @MainActor
-func submitPlaylistURL(_ pasted: String) async throws -> String {
-    // Build http://127.0.0.1:5000/link?url=<pasted>
-    var comps = URLComponents(string: "http://127.0.0.1:5000/link" + pasted)!
+func fetchSongs(for playlistURL: String) async throws -> [Song] {
+    var comps = URLComponents(string: "http://127.0.0.1:5000/link/" + playlistURL)!
+
 
     var req = URLRequest(url: comps.url!)
     req.httpMethod = "GET"
-    req.timeoutInterval = 60  // this specific call
+    req.timeoutInterval = 60
 
     let (data, resp) = try await Network.shared.data(for: req)
-    guard let http = resp as? HTTPURLResponse else { throw URLError(.badServerResponse) }
-    guard (200...299).contains(http.statusCode) else {
-        throw NSError(domain: "HTTP", code: http.statusCode,
-                      userInfo: [NSLocalizedDescriptionKey: "Server returned \(http.statusCode)"])
+    guard let http = resp as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+        throw URLError(.badServerResponse)
     }
-    return String(data: data, encoding: .utf8) ?? ""
+
+    // Decode JSON into array of Song
+    let decoder = JSONDecoder()
+    let songs = try decoder.decode([Song].self, from: data)
+    return songs
 }
+
 
 
 #Preview {
