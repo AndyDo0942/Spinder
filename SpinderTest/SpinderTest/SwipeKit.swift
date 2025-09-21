@@ -5,17 +5,75 @@ import Combine
 
 import Foundation
 
+// MARK: - URL Parsing
+func extractPlaylistID(from urlString: String) -> String? {
+    // Handle various Spotify URL formats:
+    // https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M
+    // spotify:playlist:37i9dQZF1DXcBWIGoYBM5M
+    // 37i9dQZF1DXcBWIGoYBM5M (just the ID)
+    
+    let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+    
+    // If it's already just an ID (22 characters, alphanumeric)
+    if trimmed.count == 22 && trimmed.allSatisfy({ $0.isLetter || $0.isNumber }) {
+        return trimmed
+    }
+    
+    // Extract from URL patterns
+    let patterns = [
+        "playlist/([a-zA-Z0-9]{22})",  // open.spotify.com/playlist/ID
+        "spotify:playlist:([a-zA-Z0-9]{22})"  // spotify:playlist:ID
+    ]
+    
+    for pattern in patterns {
+        if let regex = try? NSRegularExpression(pattern: pattern) {
+            let range = NSRange(trimmed.startIndex..<trimmed.endIndex, in: trimmed)
+            if let match = regex.firstMatch(in: trimmed, range: range),
+               let idRange = Range(match.range(at: 1), in: trimmed) {
+                return String(trimmed[idRange])
+            }
+        }
+    }
+    
+    return nil
+}
+
 struct Song: Identifiable, Codable, Hashable {
-    let id: String       // we’ll map spotify_id here
+    let id: String       // we'll map spotify_id here
     let name: String
     let artists: [String]
     let imageURL: String
+    
+    // Computed properties for compatibility with existing UI code
+    var title: String { name }
+    var artistDisplay: String { artists.joined(separator: ", ") }
+    var artworkURL: URL? { URL(string: imageURL) }
+    var spotifyID: String { id }
 
     enum CodingKeys: String, CodingKey {
         case id = "spotify_id"
         case name
-        case artists
+        case artists = "artist"  // Backend returns "artist" but we want "artists"
         case imageURL = "image_url"
+    }
+    
+    // Memberwise initializer for creating songs manually
+    init(id: String, name: String, artists: [String], imageURL: String) {
+        self.id = id
+        self.name = name
+        self.artists = artists
+        self.imageURL = imageURL
+    }
+    
+    // Minimal custom decoder to handle missing spotify_id
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        
+        // Handle missing spotify_id with a simple fallback
+        self.id = try container.decodeIfPresent(String.self, forKey: .id) ?? "missing_id_\(Int.random(in: 1000...9999))"
+        self.name = try container.decode(String.self, forKey: .name)
+        self.artists = try container.decode([String].self, forKey: .artists)
+        self.imageURL = try container.decodeIfPresent(String.self, forKey: .imageURL) ?? "https://via.placeholder.com/300x300/1DB954/FFFFFF?text=Music"
     }
 }
 
@@ -23,19 +81,11 @@ enum BackendClient {
     // TODO: change base to your Flask host
     static let base = URL(string: "http://127.0.0.1:5000")!
 
-    static func fetchRecommendedSongs() async throws -> [Song] {
-        let url = base.appendingPathComponent("recommendations")
+    static func fetchRecommendedSongs(playlistId: String = "54ZA9LXFvvFujmOVWXpHga") async throws -> [Song] {
+        let url = base.appendingPathComponent("link").appendingPathComponent(playlistId)
         let (data, _) = try await URLSession.shared.data(from: url)
-        let decoded = try JSONDecoder().decode([BackendSongDTO].self, from: data)
-        return decoded.map {
-            Song(
-                title: $0.name,
-                artists: $0.artists,
-                artworkURL: URL(string: $0.imageurl),
-                previewURL: nil,
-                spotifyID: $0.spotify_id
-            )
-        }
+        let decoded = try JSONDecoder().decode([Song].self, from: data)
+        return decoded
     }
 }
 
@@ -45,6 +95,13 @@ final class SwipeStore: ObservableObject {
     @Published var deck: [Song]
     @Published var liked: [Song] = []
     @Published var passed: [Song] = []
+    @Published var isLoading = false
+    @Published var isSendingLiked = false
+    @Published var errorMessage: String?
+    @AppStorage("currentPlaylistID") private var currentPlaylistID: String = "54ZA9LXFvvFujmOVWXpHga"
+    
+    // Track which songs have been sent to backend to prevent duplicates
+    private var sentSongIDs: Set<String> = []
 
     init(deck: [Song]) { self.deck = deck }
 
@@ -52,6 +109,16 @@ final class SwipeStore: ObservableObject {
         guard let idx = deck.firstIndex(of: song) else { return }
         _ = deck.remove(at: idx)
         if like { liked.append(song) } else { passed.append(song) }
+        
+        print("🎵 Swiped \(like ? "liked" : "passed"): \(song.name) - Deck count: \(deck.count), Liked count: \(liked.count)")
+        
+        // Check if deck is empty and we have liked songs to send
+        if deck.isEmpty && !liked.isEmpty {
+            print("🔄 Deck is empty, triggering sendLikedSongsToBackend...")
+            Task {
+                await sendLikedSongsToBackend()
+            }
+        }
     }
 
     func reset(with songs: [Song]) {
@@ -60,12 +127,63 @@ final class SwipeStore: ObservableObject {
     }
 
     func loadFromBackend() async {
+        isLoading = true
+        errorMessage = nil
+        
         do {
-            let songs = try await BackendClient.fetchRecommendedSongs()
+            let songs = try await fetchSongs(for: currentPlaylistID)
+            print("🔄 Loaded \(songs.count) new songs from backend")
             reset(with: songs)
         } catch {
             print("Fetch error:", error)
+            errorMessage = error.localizedDescription
         }
+        
+        isLoading = false
+    }
+    
+    func sendLikedSongsToBackend() async {
+        guard !liked.isEmpty && !isSendingLiked else { 
+            print("⚠️ Skipping sendLikedSongsToBackend - liked.isEmpty: \(liked.isEmpty), isSendingLiked: \(isSendingLiked)")
+            return 
+        }
+        
+        // Only send songs that haven't been sent before
+        let unsentSongs = liked.filter { !sentSongIDs.contains($0.spotifyID) }
+        guard !unsentSongs.isEmpty else { 
+            print("⚠️ No unsent songs to send")
+            return 
+        }
+        
+        print("📤 Sending \(unsentSongs.count) unsent songs to backend...")
+        isSendingLiked = true
+        
+        do {
+            // Send liked songs and get new recommendations in one call
+            let newSongs = try await postLikedSongsAndGetRecommendations(unsentSongs)
+            print("✅ Successfully sent \(unsentSongs.count) liked songs and got \(newSongs.count) new recommendations")
+            
+            // Mark these songs as sent
+            for song in unsentSongs {
+                sentSongIDs.insert(song.spotifyID)
+            }
+            
+            // Update the deck with new recommendations
+            if !newSongs.isEmpty {
+                deck = newSongs
+                print("🔄 Updated deck with \(newSongs.count) new songs")
+            }
+        } catch {
+            print("❌ Failed to send liked songs:", error)
+            errorMessage = "Failed to send feedback. Please try again."
+        }
+        
+        isSendingLiked = false
+        print("✅ sendLikedSongsToBackend completed")
+    }
+    
+    func updatePlaylistID(_ playlistID: String) {
+        currentPlaylistID = playlistID
     }
 }
 
@@ -249,6 +367,51 @@ struct LabelBadge: View {
     }
 }
 
+// MARK: - Loading Overlay
+struct LoadingOverlay: View {
+    let isLoading: Bool
+    let isSendingLiked: Bool
+    
+    var body: some View {
+        if isLoading || isSendingLiked {
+            ZStack {
+                Color.black.opacity(0.3)
+                    .ignoresSafeArea()
+                
+                VStack(spacing: 20) {
+                    ProgressView()
+                        .scaleEffect(1.5)
+                        .tint(.white)
+                    
+                    VStack(spacing: 8) {
+                        Text(isSendingLiked ? "Sending your feedback..." : "Discovering your perfect songs...")
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                        
+                        Text(isSendingLiked ? "We're learning from your preferences" : "This may take a moment while we analyze your playlist")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.8))
+                            .multilineTextAlignment(.center)
+                    }
+                }
+                .padding(32)
+                .background(
+                    RoundedRectangle(cornerRadius: 20)
+                        .fill(.ultraThinMaterial)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 20)
+                                .stroke(Palette.grad, lineWidth: 2)
+                        )
+                )
+                .padding(.horizontal, 40)
+                .shadow(radius: 20)
+            }
+            .transition(.opacity)
+            .animation(.easeInOut(duration: 0.3), value: isLoading || isSendingLiked)
+        }
+    }
+}
+
 // MARK: - Deck
 struct SongSwipeDeck: View {
     @ObservedObject var store: SwipeStore
@@ -268,16 +431,43 @@ struct SongSwipeDeck: View {
                 .offset(y: CGFloat(idx) * 8)
             }
 
-            if store.deck.isEmpty {
+            if let errorMessage = store.errorMessage {
+                VStack(spacing: 16) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.largeTitle)
+                        .foregroundStyle(.orange)
+                    Text("Oops! Something went wrong")
+                        .font(.headline)
+                    Text(errorMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                    Button("Try Again") {
+                        Task {
+                            await store.loadFromBackend()
+                        }
+                    }
+                    .buttonStyle(GlassGradientButtonStyle())
+                }
+                .padding(24)
+                .background(RoundedRectangle(cornerRadius: 16).fill(.ultraThinMaterial))
+                .padding(.top, 200)
+                .shadow(radius: 10)
+            } else if store.deck.isEmpty && !store.isLoading && !store.isSendingLiked {
                 VStack(spacing: 12) {
                     Image(systemName: "music.note.list").font(.largeTitle)
                     Text("You're all caught up!")
-                    ProgressView().padding(4)
+                    Text("Pull to refresh or try a different playlist")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 .background(RoundedRectangle(cornerRadius: 16).fill(Color(.systemBackground)))
                 .padding(.top, 200)
                 .shadow(radius: 10)
             }
+            
+            // Loading overlay
+            LoadingOverlay(isLoading: store.isLoading, isSendingLiked: store.isSendingLiked)
         }
         .onAppear {
             currentTopID = store.deck.first?.spotifyID
@@ -331,8 +521,9 @@ struct DemoData {
 
 // MARK: - Home
 struct SongSwipeHome: View {
-    // Start with an empty deck (or use DemoData.songs if you want placeholders)
-    @StateObject private var store = SwipeStore(deck: DemoData.songs) // or DemoData.songs
+    // Start with demo data and load real data from backend
+    @StateObject private var store = SwipeStore(deck: DemoData.songs)
+    @AppStorage("currentPlaylistID") private var currentPlaylistID: String = "54ZA9LXFvvFujmOVWXpHga"
 
     var body: some View {
         NavigationStack {
@@ -366,39 +557,62 @@ struct SongSwipeHome: View {
             // Load from your Flask backend once the view appears
             await store.loadFromBackend()
         }
+        .onChange(of: currentPlaylistID) { _, newPlaylistID in
+            // Reload data when playlist ID changes
+            Task {
+                await store.loadFromBackend()
+            }
+        }
+        .refreshable {
+            // Pull to refresh functionality
+            await store.loadFromBackend()
+        }
     }
 }
 
 
 struct LikedListView: View {
     let liked: [Song]
+    @State private var showingEmptyState = false
 
     var body: some View {
-        List(liked) { s in
-            HStack(spacing: 12) {
-                AsyncImage(url: s.artworkURL) { img in
-                    img.resizable().scaledToFill()
-                } placeholder: { Color.gray.opacity(0.2) }
-                .frame(width: 56, height: 56)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-
-                VStack(alignment: .leading) {
-                    Text(s.title).font(.headline)
-                    Text(s.artistDisplay)
-                        .font(.subheadline)
+        NavigationView {
+            if liked.isEmpty {
+                VStack(spacing: 20) {
+                    Image(systemName: "heart.slash")
+                        .font(.system(size: 60))
                         .foregroundStyle(.secondary)
+                    Text("No liked songs yet")
+                        .font(.title2)
+                        .fontWeight(.medium)
+                    Text("Start swiping to discover music you love!")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
                 }
-            }
-        }
-        .navigationTitle("Liked")
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
-                    saveLikedToPlaylist()
-                } label: {
-                    Image(systemName: "square.and.arrow.down")
+                .padding(40)
+                .navigationTitle("Liked Songs")
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        ForEach(liked) { song in
+                            LikedSongRow(song: song)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
                 }
-                .accessibilityLabel("Save to Spotify Playlist")
+                .navigationTitle("Liked Songs (\(liked.count))")
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button {
+                            saveLikedToPlaylist()
+                        } label: {
+                            Image(systemName: "square.and.arrow.down")
+                        }
+                        .accessibilityLabel("Save to Spotify Playlist")
+                    }
+                }
             }
         }
     }
@@ -407,6 +621,48 @@ struct LikedListView: View {
         let trackIDs = liked.compactMap { $0.spotifyID }
         print("Saving these to playlist:", trackIDs)
         // TODO!!!!: hook into backend/Spotify API to actually save
+    }
+}
+
+struct LikedSongRow: View {
+    let song: Song
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            AsyncImage(url: song.artworkURL) { img in
+                img.resizable().scaledToFill()
+            } placeholder: { 
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.gray.opacity(0.2))
+            }
+            .frame(width: 60, height: 60)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .shadow(radius: 2)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(song.title)
+                    .font(.headline)
+                    .lineLimit(2)
+                    .foregroundStyle(.primary)
+                
+                Text(song.artistDisplay)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            
+            Spacer()
+            
+            Image(systemName: "heart.fill")
+                .foregroundStyle(.pink)
+                .font(.title3)
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(.ultraThinMaterial)
+        )
     }
 }
 func simpleGetUrlRequest(url: String, completion: @escaping (String?) -> Void) {
@@ -437,8 +693,8 @@ func simpleGetUrlRequest(url: String, completion: @escaping (String?) -> Void) {
 struct Network {
     static let shared: URLSession = {
         let cfg = URLSessionConfiguration.default
-        cfg.timeoutIntervalForRequest = 30      // per request handshake / data
-        cfg.timeoutIntervalForResource = 120    // entire transfer
+        cfg.timeoutIntervalForRequest = 60      // per request handshake / data
+        cfg.timeoutIntervalForResource = 300    // entire transfer (5 minutes for AI processing)
         cfg.waitsForConnectivity = true         // cellular / wifi recoveries
         return URLSession(configuration: cfg)
     }()
@@ -446,22 +702,97 @@ struct Network {
 
 @MainActor
 func fetchSongs(for playlistURL: String) async throws -> [Song] {
+    print("🌐 Fetching songs for playlist: \(playlistURL)")
     var comps = URLComponents(string: "http://127.0.0.1:5000/link/" + playlistURL)!
-
 
     var req = URLRequest(url: comps.url!)
     req.httpMethod = "GET"
-    req.timeoutInterval = 60
+    // Remove conflicting timeout - let URLSession handle it
+    req.setValue("application/json", forHTTPHeaderField: "Accept")
+    req.setValue("Spinder-iOS/1.0", forHTTPHeaderField: "User-Agent")
 
     let (data, resp) = try await Network.shared.data(for: req)
     guard let http = resp as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
-        throw URLError(.badServerResponse)
+        let statusCode = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        print("❌ Server error: \(statusCode)")
+        throw URLError(.badServerResponse, userInfo: [
+            NSLocalizedDescriptionKey: "Server returned status code: \(statusCode)"
+        ])
+    }
+
+    // Debug: Print raw response
+    if let jsonString = String(data: data, encoding: .utf8) {
+        print("📥 Raw response (first 500 chars): \(String(jsonString.prefix(500)))")
     }
 
     // Decode JSON into array of Song
     let decoder = JSONDecoder()
-    let songs = try decoder.decode([Song].self, from: data)
-    return songs
+    do {
+        let songs = try decoder.decode([Song].self, from: data)
+        print("✅ Successfully decoded \(songs.count) songs")
+        return songs
+    } catch {
+        print("❌ Decoding error: \(error)")
+        print("❌ Error details: \(error.localizedDescription)")
+        throw error
+    }
+}
+
+@MainActor
+func postLikedSongsAndGetRecommendations(_ likedSongs: [Song]) async throws -> [Song] {
+    let url = URL(string: "http://127.0.0.1:5000/songids")!
+    var req = URLRequest(url: url)
+    req.httpMethod = "POST"
+    req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    req.setValue("Spinder-iOS/1.0", forHTTPHeaderField: "User-Agent")
+    
+    // Filter out songs with missing IDs and validate Spotify IDs
+    let spotifyIDs = likedSongs
+        .filter { !$0.spotifyID.hasPrefix("missing_id_") }
+        .filter { $0.spotifyID.count == 22 && $0.spotifyID.allSatisfy { $0.isLetter || $0.isNumber } }
+        .map { $0.spotifyID }
+    
+    // Only send if we have valid Spotify IDs
+    guard !spotifyIDs.isEmpty else {
+        print("⚠️ No valid Spotify IDs to send")
+        return []
+    }
+    
+    // Debug: Print what we're sending
+    print("📤 Sending \(spotifyIDs.count) Spotify IDs to backend:", spotifyIDs)
+    
+    let encoder = JSONEncoder()
+    req.httpBody = try encoder.encode(spotifyIDs)
+    
+    // Debug: Print the actual JSON being sent
+    if let body = req.httpBody, let jsonString = String(data: body, encoding: .utf8) {
+        print("📤 JSON body:", jsonString)
+    }
+    
+    let (data, resp) = try await Network.shared.data(for: req)
+    guard let http = resp as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+        let statusCode = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        throw URLError(.badServerResponse, userInfo: [
+            NSLocalizedDescriptionKey: "Failed to send liked songs. Status: \(statusCode)"
+        ])
+    }
+    
+    // Debug: Print raw response
+    if let jsonString = String(data: data, encoding: .utf8) {
+        print("📥 Raw response (first 500 chars): \(String(jsonString.prefix(500)))")
+    }
+    
+    // Decode the new recommendations
+    let decoder = JSONDecoder()
+    do {
+        let songs = try decoder.decode([Song].self, from: data)
+        print("✅ Successfully decoded \(songs.count) new recommendations")
+        return songs
+    } catch {
+        print("❌ Decoding error: \(error)")
+        print("❌ Error details: \(error.localizedDescription)")
+        throw error
+    }
 }
 
 

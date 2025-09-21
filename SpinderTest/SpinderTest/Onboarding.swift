@@ -87,7 +87,7 @@ struct PlaylistLinkOnboarding: View {
     @Environment(\.dismiss) private var dismiss
     @State private var responseText: String?
     
-    let onImported: ([Song]) -> Void
+    let onImported: (String?) -> Void
 
     var body: some View {
         ZStack {
@@ -115,25 +115,38 @@ struct PlaylistLinkOnboarding: View {
                 Button {
                     Task {
                         isLoading = true
-                        defer { isLoading = false }
-                        do {
-                            let result = try await submitPlaylistURL(input)
-                            print("✅ server said:", result)
-                            onImported([])   // proceed to next screen / deck
-                            dismiss()
-                        } catch {
-                            self.error = (error as NSError).localizedDescription
-                            print("❌", error)
+                        error = nil
+                        
+                        // Extract playlist ID from the URL
+                        guard let playlistID = extractPlaylistID(from: input) else {
+                            self.error = "Invalid Spotify playlist URL. Please check the format."
+                            isLoading = false
+                            return
                         }
+                        
+                        print("✅ Extracted playlist ID:", playlistID)
+                        
+                        // Add a small delay to show loading state
+                        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+                        
+                        onImported(playlistID)   // pass the playlist ID to the main app
+                        dismiss()
                     }
                 } label: {
-                    Text(isLoading ? "Importing…" : "Use This Playlist").bold()
+                    HStack {
+                        if isLoading {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                                .tint(.white)
+                        }
+                        Text(isLoading ? "Processing…" : "Use This Playlist").bold()
+                    }
                 }
-                .disabled(isLoading)
+                .disabled(isLoading || input.isEmpty)
                 .buttonStyle(GlassGradientButtonStyle())
 
 
-                Button("Skip for now") { dismiss() }.foregroundStyle(.secondary)
+                Button("Skip for now") { onImported(nil); dismiss() }.foregroundStyle(.secondary)
             }
             .padding(20)
             .background(RoundedRectangle(cornerRadius: 24).fill(.ultraThinMaterial))
@@ -284,7 +297,13 @@ struct DreamOnboarding: View {
 
         }
         .sheet(isPresented: $showPlaylistSheet) {
-            PlaylistLinkOnboarding { _ in didOnboard = true }
+            PlaylistLinkOnboarding { playlistID in 
+                if let playlistID = playlistID {
+                    // Store the playlist ID and proceed to main app
+                    UserDefaults.standard.set(playlistID, forKey: "currentPlaylistID")
+                }
+                didOnboard = true 
+            }
                 .presentationDetents([.medium, .large])
                 .presentationBackground(.clear)
                 .presentationCornerRadius(28)
