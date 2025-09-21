@@ -113,7 +113,7 @@ struct PlaylistLinkOnboarding: View {
                 if let error { Text(error).font(.footnote).foregroundStyle(.red) }
 
                 Button {
-                    simpleGetUrlRequest(url: "http://127.0.0.1:5000/link/abc") { text in
+                    simpleGetUrlRequest(url: "http://127.0.0.1:5000/link/" + input) { text in
                             DispatchQueue.main.async {
                                 responseText = text
                             }
