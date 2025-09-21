@@ -99,13 +99,19 @@ struct SpotifyEmbedView: UIViewRepresentable {
         wv.isOpaque = false
         wv.backgroundColor = .clear
         wv.scrollView.isScrollEnabled = false
-        if let url = URL(string: "https://open.spotify.com/embed/track/\(trackID)?utm_source=generator") {
-            wv.load(URLRequest(url: url))
-        }
+        let url = URL(string: "https://open.spotify.com/embed/track/\(trackID)?utm_source=generator")!
+        wv.load(URLRequest(url: url))
         return wv
     }
-    func updateUIView(_ uiView: WKWebView, context: Context) {}
+
+    func updateUIView(_ uiView: WKWebView, context: Context) {
+        let url = URL(string: "https://open.spotify.com/embed/track/\(trackID)?utm_source=generator")!
+        if uiView.url != url {
+            uiView.load(URLRequest(url: url))
+        }
+    }
 }
+
 
 // MARK: - Card
 struct SongCard: View {
@@ -212,6 +218,8 @@ struct LabelBadge: View {
 struct SongSwipeDeck: View {
     @ObservedObject var store: SwipeStore
 
+    @State private var currentTopID: String?
+
     var body: some View {
         ZStack {
             ForEach(Array(store.deck.enumerated()), id: \.element.id) { idx, song in
@@ -219,7 +227,8 @@ struct SongSwipeDeck: View {
                     withAnimation { store.swipe(song, like: like) }
                 }
                 .padding(20)
-                .zIndex(Double(idx))
+                // make sure top card draws on TOP visually (optional but nice)
+                .zIndex(Double(store.deck.count - idx))
                 .scaleEffect(1 - (CGFloat(idx) * 0.02))
                 .offset(y: CGFloat(idx) * 8)
             }
@@ -235,11 +244,19 @@ struct SongSwipeDeck: View {
                 .shadow(radius: 10)
             }
         }
+        .onAppear {
+            currentTopID = store.deck.first?.spotifyID
+        }
+        // whenever the top song changes (after a swipe), update the embed
+        .onChange(of: store.deck.first?.id) { _, _ in
+            currentTopID = store.deck.first?.spotifyID
+        }
         // Embed for the top song
         .safeAreaInset(edge: .bottom) {
-            if let id = store.deck.first?.spotifyID {
+            if let id = currentTopID {
                 SpotifyEmbedView(trackID: id)
-                    .frame(height: 200)
+                    .id(id)
+                    .frame(height: 84)
                     .clipShape(RoundedRectangle(cornerRadius: 14))
                     .padding(.horizontal, 20)
                     .padding(.bottom, 12)
@@ -249,6 +266,7 @@ struct SongSwipeDeck: View {
         }
     }
 }
+
 
 // MARK: - Demo
 enum DemoData {
