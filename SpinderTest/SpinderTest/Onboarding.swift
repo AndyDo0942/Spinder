@@ -109,8 +109,8 @@ struct PlaylistLinkOnboarding: View {
 
                 if let error { Text(error).font(.footnote).foregroundStyle(.red) }
 
-                Button {
-                    // For now, just dismiss and let Home fetch from backend
+                Button (action:{}){
+                    // For now, just dismiss and let Home fetc from backend
                     onImported([])
                     dismiss()
                 } label: {
