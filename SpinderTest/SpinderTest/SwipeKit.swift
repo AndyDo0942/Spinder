@@ -324,7 +324,16 @@ struct SongSwipeHome: View {
         NavigationStack {
             VStack(spacing: 0) {
                 // Custom Gradient Title
-                Text("Spinder")
+                HStack(spacing: -5) {
+                    Text("Spinder")
+                        .font(.system(size: 30, weight: .heavy, design: .rounded))
+                        .gradientText()
+
+                    Image("SpinderLogo")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 65, height: 65) // adjust to balance text
+                }
                     .font(.system(size: 36, weight: .heavy, design: .rounded))
                     .gradientText() // ✅ uses the extension that applies Palette.grad
                     .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 4)
